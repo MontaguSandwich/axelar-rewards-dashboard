@@ -29,6 +29,8 @@ export interface RewardsPoolData {
 
   // Calculated
   activeVerifiers: number;
+  // Estimated verifiers who meet participation threshold and qualify for rewards
+  estimatedQualifyingVerifiers: number;
   rewardsPerNewVerifierPerEpoch: number;
   estimatedWeeklyRewards: number;
   estimatedMonthlyRewards: number;
