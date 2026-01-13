@@ -117,16 +117,22 @@ export async function fetchVerifierPerformance(
   const log = onProgress || console.log;
 
   try {
-    const [poolInfo, globalMultisig, currentBlock] = await Promise.all([
+    const [poolInfo, globalMultisig, currentBlock, verifiers] = await Promise.all([
       fetchRewardsPoolInfo(chainName),
       getGlobalMultisigAddress(),
-      getCurrentBlockHeight()
+      getCurrentBlockHeight(),
+      fetchAllVerifiers(chainName)
     ]);
 
     if (!poolInfo || !globalMultisig) {
       log('Could not get pool info or multisig contract');
       return null;
     }
+
+    const activeVerifiers = verifiers.length;
+    const rewardsPerVerifierPerEpoch = activeVerifiers > 0
+      ? poolInfo.rewardsPerEpoch / activeVerifiers
+      : poolInfo.rewardsPerEpoch;
 
     // Calculate unpaid epochs
     const unpaidEpochs: number[] = [];
@@ -143,7 +149,9 @@ export async function fetchVerifierPerformance(
         currentEpoch: poolInfo.currentEpoch,
         lastDistributionEpoch: poolInfo.lastDistributionEpoch,
         unpaidEpochCount: 0,
-        rewardsPerEpoch: poolInfo.rewardsPerEpoch,
+        activeVerifiers,
+        poolRewardsPerEpoch: poolInfo.rewardsPerEpoch,
+        rewardsPerVerifierPerEpoch,
         epochPerformance: [],
         qualifiedEpochs: 0,
         estimatedPendingRewards: 0
@@ -237,15 +245,17 @@ export async function fetchVerifierPerformance(
     }
 
     // Estimate pending rewards (based on qualified epochs checked)
-    // Note: This is an approximation based on checked epochs
-    const estimatedPendingRewards = (qualifiedEpochs / epochsToScan.length) * unpaidEpochs.length * poolInfo.rewardsPerEpoch;
+    // Note: This is an approximation based on checked epochs - uses per-verifier share
+    const estimatedPendingRewards = (qualifiedEpochs / epochsToScan.length) * unpaidEpochs.length * rewardsPerVerifierPerEpoch;
 
     return {
       chainName,
       currentEpoch: poolInfo.currentEpoch,
       lastDistributionEpoch: poolInfo.lastDistributionEpoch,
       unpaidEpochCount: unpaidEpochs.length,
-      rewardsPerEpoch: poolInfo.rewardsPerEpoch,
+      activeVerifiers,
+      poolRewardsPerEpoch: poolInfo.rewardsPerEpoch,
+      rewardsPerVerifierPerEpoch,
       epochPerformance,
       qualifiedEpochs,
       estimatedPendingRewards

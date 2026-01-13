@@ -188,7 +188,7 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
       {chainData && (
         <div className="space-y-6">
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
               <div className="text-sm text-[var(--text-secondary)] mb-1">Current Epoch</div>
               <div className="text-2xl font-bold text-[var(--text-primary)]">
@@ -202,16 +202,25 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
               </div>
             </div>
             <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
-              <div className="text-sm text-[var(--text-secondary)] mb-1">Rewards/Epoch</div>
+              <div className="text-sm text-[var(--text-secondary)] mb-1">Active Verifiers</div>
               <div className="text-2xl font-bold text-[var(--text-primary)]">
-                {chainData.rewardsPerEpoch.toFixed(2)}
+                {chainData.activeVerifiers}
+              </div>
+            </div>
+            <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+              <div className="text-sm text-[var(--text-secondary)] mb-1">Your Rewards/Epoch</div>
+              <div className="text-2xl font-bold text-[var(--text-primary)]">
+                {chainData.rewardsPerVerifierPerEpoch.toFixed(2)}
                 <span className="text-sm font-normal text-[var(--text-secondary)] ml-1">AXL</span>
+              </div>
+              <div className="text-xs text-[var(--text-secondary)]">
+                Pool: {chainData.poolRewardsPerEpoch.toFixed(0)} AXL
               </div>
             </div>
             <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
               <div className="text-sm text-[var(--text-secondary)] mb-1">Est. Pending</div>
               <div className="text-2xl font-bold text-[var(--accent-green)]">
-                ~{chainData.estimatedPendingRewards.toFixed(0)}
+                ~{chainData.estimatedPendingRewards.toFixed(2)}
                 <span className="text-sm font-normal ml-1">AXL</span>
               </div>
               {axlPrice && (

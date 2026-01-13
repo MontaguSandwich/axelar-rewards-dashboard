@@ -83,7 +83,9 @@ export interface VerifierChainData {
   currentEpoch: number;
   lastDistributionEpoch: number;
   unpaidEpochCount: number;
-  rewardsPerEpoch: number;
+  activeVerifiers: number;
+  poolRewardsPerEpoch: number; // Total pool rewards
+  rewardsPerVerifierPerEpoch: number; // Per verifier share
   epochPerformance: EpochPerformance[];
   qualifiedEpochs: number;
   estimatedPendingRewards: number;
