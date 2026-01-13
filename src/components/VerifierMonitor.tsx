@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Verifier, VerifierChainData, ChainConfig } from '../types';
+import type { Verifier, VerifierChainData, VotingChainData, ChainConfig } from '../types';
 import { fetchAllVerifiers, fetchVerifierPerformance } from '../api/verifier';
+import { fetchVotingPerformance } from '../api/voting';
 import { getChainConfigs } from '../api/config';
 import { getVerifierName } from '../constants/verifiers';
 
@@ -22,10 +23,12 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Performance data
-  const [chainData, setChainData] = useState<VerifierChainData | null>(null);
+  const [signingData, setSigningData] = useState<VerifierChainData | null>(null);
+  const [votingData, setVotingData] = useState<VotingChainData | null>(null);
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(false);
   const [progressMessage, setProgressMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [activePoolTab, setActivePoolTab] = useState<'signing' | 'voting'>('signing');
 
   // Load chains on mount
   useEffect(() => {
@@ -38,7 +41,8 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
       loadVerifiers(selectedChain);
       // Clear previous selection and data
       setSelectedAddress('');
-      setChainData(null);
+      setSigningData(null);
+      setVotingData(null);
     }
   }, [selectedChain]);
 
@@ -92,20 +96,37 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
 
     setIsLoadingPerformance(true);
     setError(null);
-    setProgressMessage('Starting...');
-    setChainData(null);
+    setProgressMessage('Fetching signing performance...');
+    setSigningData(null);
+    setVotingData(null);
 
     try {
-      const data = await fetchVerifierPerformance(
+      // Fetch signing performance first
+      const signingResult = await fetchVerifierPerformance(
         addressToLookup,
         selectedChain,
         5,
-        (msg) => setProgressMessage(msg)
+        (msg) => setProgressMessage(`Signing: ${msg}`)
       );
 
-      if (data) {
-        setChainData(data);
-      } else {
+      if (signingResult) {
+        setSigningData(signingResult);
+      }
+
+      // Then fetch voting performance
+      setProgressMessage('Fetching voting performance...');
+      const votingResult = await fetchVotingPerformance(
+        addressToLookup,
+        selectedChain,
+        5,
+        (msg) => setProgressMessage(`Voting: ${msg}`)
+      );
+
+      if (votingResult) {
+        setVotingData(votingResult);
+      }
+
+      if (!signingResult && !votingResult) {
         setError('Could not fetch performance data for this verifier');
       }
     } catch (err) {
@@ -138,7 +159,7 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
           Verifier Performance Monitor
         </h2>
         <p className="text-[var(--text-secondary)]">
-          Track your signing participation and pending rewards across epochs
+          Track your signing and voting participation and pending rewards across epochs
         </p>
       </div>
 
@@ -260,123 +281,305 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
       )}
 
       {/* Performance Results */}
-      {chainData && (
+      {(signingData || votingData) && (
         <div className="space-y-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
-              <div className="text-sm text-[var(--text-secondary)] mb-1">Current Epoch</div>
-              <div className="text-2xl font-bold text-[var(--text-primary)]">
-                {chainData.currentEpoch}
-              </div>
-            </div>
-            <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
-              <div className="text-sm text-[var(--text-secondary)] mb-1">Unpaid Epochs</div>
-              <div className="text-2xl font-bold text-[var(--text-primary)]">
-                {chainData.unpaidEpochCount}
-              </div>
-            </div>
-            <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
-              <div className="text-sm text-[var(--text-secondary)] mb-1">Active Verifiers</div>
-              <div className="text-2xl font-bold text-[var(--text-primary)]">
-                {chainData.activeVerifiers}
-              </div>
-            </div>
-            <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
-              <div className="text-sm text-[var(--text-secondary)] mb-1">Your Rewards/Epoch</div>
-              <div className="text-2xl font-bold text-[var(--text-primary)]">
-                {chainData.rewardsPerVerifierPerEpoch.toFixed(2)}
-                <span className="text-sm font-normal text-[var(--text-secondary)] ml-1">AXL</span>
-              </div>
-              <div className="text-xs text-[var(--text-secondary)]">
-                Pool: {chainData.poolRewardsPerEpoch.toFixed(0)} AXL
-              </div>
-            </div>
-            <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
-              <div className="text-sm text-[var(--text-secondary)] mb-1">Est. Pending</div>
-              <div className="text-2xl font-bold text-[var(--accent-green)]">
-                ~{chainData.estimatedPendingRewards.toFixed(2)}
-                <span className="text-sm font-normal ml-1">AXL</span>
-              </div>
-              {axlPrice && (
-                <div className="text-sm text-[var(--text-secondary)]">
-                  ~${(chainData.estimatedPendingRewards * axlPrice).toFixed(2)}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Performance Table */}
+          {/* Pool Tabs */}
           <div className="bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] overflow-hidden">
-            <div className="px-6 py-4 border-b border-[var(--border-color)]">
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                {getVerifierName(selectedAddress) || 'Verifier'} - Signing Performance
-              </h3>
-              <p className="text-sm text-[var(--text-secondary)]">
-                Chain: {chainData.chainName.toUpperCase()} | Last {chainData.epochPerformance.length} Epochs | Threshold: 80%
-              </p>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-[var(--bg-primary)]">
-                    <th className="text-left px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Epoch</th>
-                    <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Sessions</th>
-                    <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Signed</th>
-                    <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Rate</th>
-                    <th className="text-center px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Qualified</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border-color)]">
-                  {chainData.epochPerformance.map((perf) => (
-                    <tr key={perf.epochNum} className="hover:bg-[var(--bg-primary)]/50">
-                      <td className="px-6 py-3 text-[var(--text-primary)] font-medium">
-                        {perf.epochNum}
-                      </td>
-                      <td className="px-6 py-3 text-right text-[var(--text-primary)]">
-                        {perf.sessionsInEpoch}
-                      </td>
-                      <td className="px-6 py-3 text-right text-[var(--text-primary)]">
-                        {perf.sessionsSigned}
-                      </td>
-                      <td className={`px-6 py-3 text-right font-medium ${getStatusColor(perf.participationRate)}`}>
-                        {perf.sessionsInEpoch > 0 ? `${perf.participationRate.toFixed(1)}%` : 'N/A'}
-                      </td>
-                      <td className="px-6 py-3 text-center text-lg">
-                        {perf.sessionsInEpoch > 0 ? getStatusIcon(perf.qualified) : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Summary Footer */}
-            <div className="px-6 py-4 border-t border-[var(--border-color)] bg-[var(--bg-primary)]">
-              <div className="flex items-center justify-between">
-                <div className="text-[var(--text-secondary)]">
-                  <span className="font-medium text-[var(--text-primary)]">
-                    {chainData.qualifiedEpochs}/{chainData.epochPerformance.length}
+            <div className="flex border-b border-[var(--border-color)]">
+              <button
+                onClick={() => setActivePoolTab('signing')}
+                className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+                  activePoolTab === 'signing'
+                    ? 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] border-b-2 border-[var(--accent-blue)]'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]'
+                }`}
+              >
+                Signing Pool
+                {signingData && (
+                  <span className="ml-2 text-xs opacity-75">
+                    ({signingData.qualifiedEpochs}/{signingData.epochPerformance.length} qualified)
                   </span>
-                  {' '}epochs qualified in sample
-                </div>
-                <div className={`text-sm font-medium ${
-                  chainData.qualifiedEpochs === chainData.epochPerformance.length
-                    ? 'text-[var(--accent-green)]'
-                    : chainData.qualifiedEpochs > 0
-                    ? 'text-[var(--accent-yellow)]'
-                    : 'text-[var(--accent-red)]'
-                }`}>
-                  {chainData.qualifiedEpochs === chainData.epochPerformance.length
-                    ? 'On track for rewards!'
-                    : chainData.qualifiedEpochs > 0
-                    ? 'Partial qualification'
-                    : 'Below threshold'}
-                </div>
-              </div>
+                )}
+                {!signingData && <span className="ml-2 text-xs opacity-50">(N/A)</span>}
+              </button>
+              <button
+                onClick={() => setActivePoolTab('voting')}
+                className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+                  activePoolTab === 'voting'
+                    ? 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)] border-b-2 border-[var(--accent-blue)]'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]'
+                }`}
+              >
+                Voting Pool
+                {votingData && (
+                  <span className="ml-2 text-xs opacity-75">
+                    ({votingData.qualifiedEpochs}/{votingData.epochPerformance.length} qualified)
+                  </span>
+                )}
+                {!votingData && <span className="ml-2 text-xs opacity-50">(N/A)</span>}
+              </button>
             </div>
           </div>
+
+          {/* Signing Pool View */}
+          {activePoolTab === 'signing' && signingData && (
+            <>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Current Epoch</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {signingData.currentEpoch}
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Unpaid Epochs</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {signingData.unpaidEpochCount}
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Active Verifiers</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {signingData.activeVerifiers}
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Your Rewards/Epoch</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {signingData.rewardsPerVerifierPerEpoch.toFixed(2)}
+                    <span className="text-sm font-normal text-[var(--text-secondary)] ml-1">AXL</span>
+                  </div>
+                  <div className="text-xs text-[var(--text-secondary)]">
+                    Pool: {signingData.poolRewardsPerEpoch.toFixed(0)} AXL
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Est. Pending</div>
+                  <div className="text-2xl font-bold text-[var(--accent-green)]">
+                    ~{signingData.estimatedPendingRewards.toFixed(2)}
+                    <span className="text-sm font-normal ml-1">AXL</span>
+                  </div>
+                  {axlPrice && (
+                    <div className="text-sm text-[var(--text-secondary)]">
+                      ~${(signingData.estimatedPendingRewards * axlPrice).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Performance Table */}
+              <div className="bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] overflow-hidden">
+                <div className="px-6 py-4 border-b border-[var(--border-color)]">
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                    {getVerifierName(selectedAddress) || 'Verifier'} - Signing Performance
+                  </h3>
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    Chain: {signingData.chainName.toUpperCase()} | Last {signingData.epochPerformance.length} Epochs | Threshold: 80%
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[var(--bg-primary)]">
+                        <th className="text-left px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Epoch</th>
+                        <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Sessions</th>
+                        <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Signed</th>
+                        <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Rate</th>
+                        <th className="text-center px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Qualified</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border-color)]">
+                      {signingData.epochPerformance.map((perf) => (
+                        <tr key={perf.epochNum} className="hover:bg-[var(--bg-primary)]/50">
+                          <td className="px-6 py-3 text-[var(--text-primary)] font-medium">
+                            {perf.epochNum}
+                          </td>
+                          <td className="px-6 py-3 text-right text-[var(--text-primary)]">
+                            {perf.sessionsInEpoch}
+                          </td>
+                          <td className="px-6 py-3 text-right text-[var(--text-primary)]">
+                            {perf.sessionsSigned}
+                          </td>
+                          <td className={`px-6 py-3 text-right font-medium ${getStatusColor(perf.participationRate)}`}>
+                            {perf.sessionsInEpoch > 0 ? `${perf.participationRate.toFixed(1)}%` : 'N/A'}
+                          </td>
+                          <td className="px-6 py-3 text-center text-lg">
+                            {perf.sessionsInEpoch > 0 ? getStatusIcon(perf.qualified) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Summary Footer */}
+                <div className="px-6 py-4 border-t border-[var(--border-color)] bg-[var(--bg-primary)]">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[var(--text-secondary)]">
+                      <span className="font-medium text-[var(--text-primary)]">
+                        {signingData.qualifiedEpochs}/{signingData.epochPerformance.length}
+                      </span>
+                      {' '}epochs qualified in sample
+                    </div>
+                    <div className={`text-sm font-medium ${
+                      signingData.qualifiedEpochs === signingData.epochPerformance.length
+                        ? 'text-[var(--accent-green)]'
+                        : signingData.qualifiedEpochs > 0
+                        ? 'text-[var(--accent-yellow)]'
+                        : 'text-[var(--accent-red)]'
+                    }`}>
+                      {signingData.qualifiedEpochs === signingData.epochPerformance.length
+                        ? 'On track for rewards!'
+                        : signingData.qualifiedEpochs > 0
+                        ? 'Partial qualification'
+                        : 'Below threshold'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Signing Pool - No Data */}
+          {activePoolTab === 'signing' && !signingData && (
+            <div className="bg-[var(--bg-secondary)] rounded-xl p-8 border border-[var(--border-color)] text-center">
+              <div className="text-[var(--text-secondary)]">
+                No signing rewards pool found for this chain.
+              </div>
+            </div>
+          )}
+
+          {/* Voting Pool View */}
+          {activePoolTab === 'voting' && votingData && (
+            <>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Current Epoch</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {votingData.currentEpoch}
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Unpaid Epochs</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {votingData.unpaidEpochCount}
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Active Verifiers</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {votingData.activeVerifiers}
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Your Rewards/Epoch</div>
+                  <div className="text-2xl font-bold text-[var(--text-primary)]">
+                    {votingData.rewardsPerVerifierPerEpoch.toFixed(2)}
+                    <span className="text-sm font-normal text-[var(--text-secondary)] ml-1">AXL</span>
+                  </div>
+                  <div className="text-xs text-[var(--text-secondary)]">
+                    Pool: {votingData.poolRewardsPerEpoch.toFixed(0)} AXL
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
+                  <div className="text-sm text-[var(--text-secondary)] mb-1">Est. Pending</div>
+                  <div className="text-2xl font-bold text-[var(--accent-green)]">
+                    ~{votingData.estimatedPendingRewards.toFixed(2)}
+                    <span className="text-sm font-normal ml-1">AXL</span>
+                  </div>
+                  {axlPrice && (
+                    <div className="text-sm text-[var(--text-secondary)]">
+                      ~${(votingData.estimatedPendingRewards * axlPrice).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Performance Table */}
+              <div className="bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] overflow-hidden">
+                <div className="px-6 py-4 border-b border-[var(--border-color)]">
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                    {getVerifierName(selectedAddress) || 'Verifier'} - Voting Performance
+                  </h3>
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    Chain: {votingData.chainName.toUpperCase()} | Last {votingData.epochPerformance.length} Epochs | Threshold: 80%
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[var(--bg-primary)]">
+                        <th className="text-left px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Epoch</th>
+                        <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Polls</th>
+                        <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Voted</th>
+                        <th className="text-right px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Rate</th>
+                        <th className="text-center px-6 py-3 text-sm font-medium text-[var(--text-secondary)]">Qualified</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border-color)]">
+                      {votingData.epochPerformance.map((perf) => (
+                        <tr key={perf.epochNum} className="hover:bg-[var(--bg-primary)]/50">
+                          <td className="px-6 py-3 text-[var(--text-primary)] font-medium">
+                            {perf.epochNum}
+                          </td>
+                          <td className="px-6 py-3 text-right text-[var(--text-primary)]">
+                            {perf.pollsInEpoch}
+                          </td>
+                          <td className="px-6 py-3 text-right text-[var(--text-primary)]">
+                            {perf.pollsVoted}
+                          </td>
+                          <td className={`px-6 py-3 text-right font-medium ${getStatusColor(perf.participationRate)}`}>
+                            {perf.pollsInEpoch > 0 ? `${perf.participationRate.toFixed(1)}%` : 'N/A'}
+                          </td>
+                          <td className="px-6 py-3 text-center text-lg">
+                            {perf.pollsInEpoch > 0 ? getStatusIcon(perf.qualified) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Summary Footer */}
+                <div className="px-6 py-4 border-t border-[var(--border-color)] bg-[var(--bg-primary)]">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[var(--text-secondary)]">
+                      <span className="font-medium text-[var(--text-primary)]">
+                        {votingData.qualifiedEpochs}/{votingData.epochPerformance.length}
+                      </span>
+                      {' '}epochs qualified in sample
+                    </div>
+                    <div className={`text-sm font-medium ${
+                      votingData.qualifiedEpochs === votingData.epochPerformance.length
+                        ? 'text-[var(--accent-green)]'
+                        : votingData.qualifiedEpochs > 0
+                        ? 'text-[var(--accent-yellow)]'
+                        : 'text-[var(--accent-red)]'
+                    }`}>
+                      {votingData.qualifiedEpochs === votingData.epochPerformance.length
+                        ? 'On track for rewards!'
+                        : votingData.qualifiedEpochs > 0
+                        ? 'Partial qualification'
+                        : 'Below threshold'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Voting Pool - No Data */}
+          {activePoolTab === 'voting' && !votingData && (
+            <div className="bg-[var(--bg-secondary)] rounded-xl p-8 border border-[var(--border-color)] text-center">
+              <div className="text-[var(--text-secondary)]">
+                No voting rewards pool found for this chain.
+              </div>
+            </div>
+          )}
 
           {/* Info Note */}
           <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
@@ -388,7 +591,9 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
               </div>
               <div className="text-sm text-[var(--text-secondary)]">
                 <p className="mb-1">
-                  <strong>Note:</strong> This shows your signing session participation for the Global Multisig pool.
+                  <strong>Note:</strong> {activePoolTab === 'signing'
+                    ? 'Signing pool tracks your participation in Global Multisig sessions.'
+                    : 'Voting pool tracks your participation in VotingVerifier polls.'}
                 </p>
                 <p>
                   Verifiers must achieve ≥80% participation rate per epoch to qualify for rewards.
@@ -401,7 +606,7 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
       )}
 
       {/* Empty State */}
-      {!chainData && !isLoadingPerformance && !error && (
+      {!signingData && !votingData && !isLoadingPerformance && !error && (
         <div className="bg-[var(--bg-secondary)] rounded-xl p-12 border border-[var(--border-color)] text-center">
           <div className="w-16 h-16 rounded-full bg-[var(--bg-primary)] flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

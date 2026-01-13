@@ -78,6 +78,28 @@ export interface EpochPerformance {
   qualified: boolean; // >= 80%
 }
 
+export interface VotingEpochPerformance {
+  epochNum: number;
+  pollsInEpoch: number;
+  pollsVoted: number;
+  participationRate: number;
+  qualified: boolean; // >= 80%
+}
+
+export interface VotingChainData {
+  chainName: string;
+  votingVerifierAddress: string;
+  currentEpoch: number;
+  lastDistributionEpoch: number;
+  unpaidEpochCount: number;
+  activeVerifiers: number;
+  poolRewardsPerEpoch: number;
+  rewardsPerVerifierPerEpoch: number;
+  epochPerformance: VotingEpochPerformance[];
+  qualifiedEpochs: number;
+  estimatedPendingRewards: number;
+}
+
 export interface VerifierChainData {
   chainName: string;
   currentEpoch: number;
