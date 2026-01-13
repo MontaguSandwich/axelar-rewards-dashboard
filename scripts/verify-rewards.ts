@@ -7,7 +7,15 @@
  * 3. Compares expected vs actual rewards
  */
 
-const AXELAR_LCD = 'https://axelar-lcd.imperator.co';
+// Try multiple LCD endpoints in case one is down
+const LCD_ENDPOINTS = [
+  'https://axelar-api.polkachu.com',
+  'https://api-axelar.cosmos-spaces.cloud',
+  'https://axelar-rest.publicnode.com',
+  'https://lcd-axelar.imperator.co',
+];
+
+let AXELAR_LCD = LCD_ENDPOINTS[0];
 const REWARDS_CONTRACT = 'axelar1harq5xe68lzl2kx4e5ch4k8840cgqnry567g0fgw7vt2atcuugrqfa7j5z';
 
 interface PoolParams {
@@ -118,11 +126,34 @@ async function getChainContracts(config: any): Promise<Map<string, { voting: str
   return chains;
 }
 
+async function findWorkingEndpoint(): Promise<string> {
+  for (const endpoint of LCD_ENDPOINTS) {
+    try {
+      console.log(`Trying endpoint: ${endpoint}...`);
+      const response = await fetch(`${endpoint}/cosmos/base/tendermint/v1beta1/blocks/latest`, {
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      if (response.ok) {
+        console.log(`✓ Connected to ${endpoint}`);
+        return endpoint;
+      }
+    } catch (e) {
+      console.log(`✗ Failed: ${endpoint}`);
+    }
+  }
+  throw new Error('All LCD endpoints failed. Check your internet connection.');
+}
+
 async function main() {
   console.log('='.repeat(80));
   console.log('AXELAR REWARDS VERIFICATION SCRIPT');
   console.log('Cross-referencing calculated rewards with on-chain data');
   console.log('='.repeat(80));
+  console.log('');
+
+  // Find a working endpoint
+  console.log('Finding working LCD endpoint...');
+  AXELAR_LCD = await findWorkingEndpoint();
   console.log('');
 
   // Get current block height
