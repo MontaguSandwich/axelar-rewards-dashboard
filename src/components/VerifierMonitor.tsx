@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { Verifier, VerifierChainData, ChainConfig } from '../types';
 import { fetchAllVerifiers, fetchVerifierPerformance } from '../api/verifier';
 import { getChainConfigs } from '../api/config';
+import { getVerifierName } from '../constants/verifiers';
 
 interface VerifierMonitorProps {
   axlPrice: number | null;
@@ -129,8 +130,6 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
     );
   };
 
-  const selectedVerifier = verifiers.find(v => v.address === selectedAddress);
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -183,13 +182,11 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
                 {isLoadingVerifiers ? (
                   'Loading verifiers...'
                 ) : selectedAddress ? (
-                  <span className="font-mono text-sm">
-                    {selectedAddress.slice(0, 12)}...{selectedAddress.slice(-8)}
-                    {selectedVerifier && (
-                      <span className="text-[var(--text-secondary)] ml-2">
-                        ({selectedVerifier.bondedAmount.toLocaleString()} AXL)
-                      </span>
-                    )}
+                  <span className="text-sm">
+                    <span className="font-medium">{getVerifierName(selectedAddress) || 'Unknown'}</span>
+                    <span className="text-[var(--text-secondary)] ml-2 font-mono text-xs">
+                      {selectedAddress.slice(0, 8)}...{selectedAddress.slice(-6)}
+                    </span>
                   </span>
                 ) : (
                   `Select from ${verifiers.length} verifiers`
@@ -208,22 +205,30 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
             {/* Dropdown Menu */}
             {isVerifierDropdownOpen && verifiers.length > 0 && (
               <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                {verifiers.map((v) => (
-                  <button
-                    key={v.address}
-                    onClick={() => handleVerifierSelect(v.address)}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                      selectedAddress === v.address
-                        ? 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]'
-                        : 'hover:bg-[var(--bg-primary)] text-[var(--text-primary)]'
-                    }`}
-                  >
-                    <span className="font-mono">{v.address.slice(0, 16)}...{v.address.slice(-8)}</span>
-                    <span className="text-[var(--text-secondary)] ml-2">
-                      ({v.bondedAmount.toLocaleString()} AXL)
-                    </span>
-                  </button>
-                ))}
+                {verifiers.map((v) => {
+                  const name = getVerifierName(v.address);
+                  return (
+                    <button
+                      key={v.address}
+                      onClick={() => handleVerifierSelect(v.address)}
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                        selectedAddress === v.address
+                          ? 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]'
+                          : 'hover:bg-[var(--bg-primary)] text-[var(--text-primary)]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{name || 'Unknown'}</span>
+                        <span className="text-[var(--text-secondary)] text-xs">
+                          {v.bondedAmount.toLocaleString()} AXL
+                        </span>
+                      </div>
+                      <div className="font-mono text-xs text-[var(--text-secondary)] mt-0.5">
+                        {v.address}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -305,10 +310,10 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
           <div className="bg-[var(--bg-secondary)] rounded-xl border border-[var(--border-color)] overflow-hidden">
             <div className="px-6 py-4 border-b border-[var(--border-color)]">
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                Signing Performance (Last {chainData.epochPerformance.length} Epochs)
+                {getVerifierName(selectedAddress) || 'Verifier'} - Signing Performance
               </h3>
               <p className="text-sm text-[var(--text-secondary)]">
-                Chain: {chainData.chainName.toUpperCase()} | Threshold: 80%
+                Chain: {chainData.chainName.toUpperCase()} | Last {chainData.epochPerformance.length} Epochs | Threshold: 80%
               </p>
             </div>
 
