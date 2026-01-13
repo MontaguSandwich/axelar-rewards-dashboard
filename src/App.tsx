@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ChainTable } from './components/ChainTable';
 import { ChainDetail } from './components/ChainDetail';
 import { fetchAllChainRewards } from './api/axelar';
@@ -39,6 +39,11 @@ function App() {
       setIsLoading(false);
     }
   }, []);
+
+  // Auto-load data on page mount
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleChainSelect = (chain: ChainRewardsData) => {
     setSelectedChain(chain);

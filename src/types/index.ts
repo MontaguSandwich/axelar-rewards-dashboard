@@ -29,9 +29,7 @@ export interface RewardsPoolData {
 
   // Calculated
   activeVerifiers: number;
-  // Estimated verifiers who meet participation threshold and qualify for rewards
-  estimatedQualifyingVerifiers: number;
-  rewardsPerNewVerifierPerEpoch: number;
+  rewardsPerVerifierPerEpoch: number;
   estimatedWeeklyRewards: number;
   estimatedMonthlyRewards: number;
 
@@ -53,7 +51,7 @@ export interface ChainRewardsData {
   poolRewardsPerEpoch: number;
   poolRewardsPerEpochUsd: number;
 
-  // Your rewards (divided by verifiers + 1)
+  // Your rewards (divided by current verifier count)
   totalRewardsPerEpoch: number;
   totalRewardsPerEpochUsd: number;
   totalWeeklyRewards: number;
@@ -88,6 +86,8 @@ export interface MainnetConfig {
       };
       VotingVerifier?: Record<string, VotingVerifierConfig>;
       MultisigProver?: Record<string, MultisigProverConfig>;
+      // Global Multisig contract - signing pools use this (per governance)
+      Multisig?: { address: string };
       // XRPL uses separate contract types
       XrplVotingVerifier?: Record<string, VotingVerifierConfig>;
       XrplMultisigProver?: Record<string, MultisigProverConfig>;

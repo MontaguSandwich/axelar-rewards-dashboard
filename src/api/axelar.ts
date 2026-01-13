@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { ChainConfig, ChainRewardsData, RewardsPoolData, RewardsPoolResponse } from '../types';
-import { getRewardsContractAddress, getChainConfigs, getServiceRegistryAddress } from './config';
+import { getRewardsContractAddress, getChainConfigs, getServiceRegistryAddress, getGlobalMultisigAddress } from './config';
 import { fetchAxlPrice } from './prices';
 
 // Use LCD (REST) API - more reliable and CORS-friendly
@@ -98,24 +98,23 @@ function calculatePoolMetrics(
     parseInt(poolResponse.participation_threshold[0]) /
     parseInt(poolResponse.participation_threshold[1]);
 
-  // IMPORTANT: Rewards are only distributed to verifiers who meet the participation threshold.
-  // Not all active verifiers qualify - only those meeting the threshold (e.g., 80%) receive rewards.
-  // The on-chain Rewards contract doesn't expose a query for aggregate qualifying verifier count;
-  // only individual VerifierParticipation can be queried (which would require N API calls).
-  // We estimate qualifying verifiers as: activeVerifiers * participationThreshold
-  // This provides a more accurate reward estimate than dividing by all active verifiers.
-  const estimatedQualifyingVerifiers = Math.max(1, Math.ceil(activeVerifiers * participationThreshold));
+  // REWARD DISTRIBUTION MECHANICS:
+  // - rewards_per_epoch is split equally among all QUALIFYING verifiers each epoch
+  // - A verifier qualifies if they participate in >= participationThreshold% of EVENTS
+  //   (e.g., 80% threshold means verifier must vote/sign on 80% of messages that epoch)
+  // - This is NOT "80% of verifiers qualify" - it's "each verifier must hit 80% participation"
+  // - In practice, most active verifiers meet the threshold (or they get deregistered)
+  // - Show actual rewards per verifier based on current verifier count
+  const rewardsPerVerifierPerEpoch = activeVerifiers > 0
+    ? rewardsPerEpoch / activeVerifiers
+    : rewardsPerEpoch; // If no verifiers, one would get full rewards
 
-  // Calculate for a NEW verifier joining (assuming they will meet the threshold)
-  const qualifyingWithNewVerifier = estimatedQualifyingVerifiers + 1;
-  const rewardsPerNewVerifierPerEpoch = rewardsPerEpoch / qualifyingWithNewVerifier;
-
-  // Calculate epochs per time period
+  // Calculate epochs per time period based on block time
   const epochsPerWeek = BLOCKS_PER_WEEK / epochDurationBlocks;
   const epochsPerMonth = BLOCKS_PER_MONTH / epochDurationBlocks;
 
-  const estimatedWeeklyRewards = rewardsPerNewVerifierPerEpoch * epochsPerWeek;
-  const estimatedMonthlyRewards = rewardsPerNewVerifierPerEpoch * epochsPerMonth;
+  const estimatedWeeklyRewards = rewardsPerVerifierPerEpoch * epochsPerWeek;
+  const estimatedMonthlyRewards = rewardsPerVerifierPerEpoch * epochsPerMonth;
 
   return {
     chainName,
@@ -127,12 +126,11 @@ function calculatePoolMetrics(
     currentEpoch,
     participationThreshold,
     activeVerifiers,
-    estimatedQualifyingVerifiers,
-    rewardsPerNewVerifierPerEpoch,
+    rewardsPerVerifierPerEpoch,
     estimatedWeeklyRewards,
     estimatedMonthlyRewards,
     balanceUsd: balance * axlPrice,
-    epochRewardsUsd: rewardsPerNewVerifierPerEpoch * axlPrice,
+    epochRewardsUsd: rewardsPerVerifierPerEpoch * axlPrice,
     weeklyRewardsUsd: estimatedWeeklyRewards * axlPrice,
     monthlyRewardsUsd: estimatedMonthlyRewards * axlPrice,
   };
@@ -141,18 +139,20 @@ function calculatePoolMetrics(
 export async function fetchAllChainRewards(): Promise<ChainRewardsData[]> {
   console.log('Fetching all chain rewards...');
 
-  const [chainConfigs, rewardsContract, axlPrice] = await Promise.all([
+  const [chainConfigs, rewardsContract, axlPrice, globalMultisig] = await Promise.all([
     getChainConfigs(),
     getRewardsContractAddress(),
     fetchAxlPrice(),
+    getGlobalMultisigAddress(),
   ]);
 
   console.log('Chain configs:', chainConfigs);
   console.log('Rewards contract:', rewardsContract);
+  console.log('Global Multisig:', globalMultisig);
   console.log('AXL price:', axlPrice);
 
   const chainRewardsPromises = chainConfigs.map(async (chain) => {
-    return fetchChainRewards(chain, rewardsContract, axlPrice);
+    return fetchChainRewards(chain, rewardsContract, axlPrice, globalMultisig);
   });
 
   const results = await Promise.all(chainRewardsPromises);
@@ -169,7 +169,8 @@ export async function fetchAllChainRewards(): Promise<ChainRewardsData[]> {
 async function fetchChainRewards(
   chain: ChainConfig,
   rewardsContract: string,
-  axlPrice: number
+  axlPrice: number,
+  globalMultisig: string | null
 ): Promise<ChainRewardsData> {
   let votingPool: RewardsPoolData | null = null;
   let signingPool: RewardsPoolData | null = null;
@@ -194,24 +195,45 @@ async function fetchChainRewards(
     }
   }
 
-  // Query signing pool
-  if (chain.multisigProverAddress) {
-    const signingResponse = await queryRewardsPool(
+  // Query signing pool - use global Multisig FIRST (per governance),
+  // then fall back to chain-specific MultisigProver
+  let signingResponse = null;
+  let signingContractUsed = null;
+
+  // Try global Multisig first (governance proposals configure pools here)
+  if (globalMultisig) {
+    signingResponse = await queryRewardsPool(
+      rewardsContract,
+      chain.chainKey,
+      globalMultisig
+    );
+    if (signingResponse && parseInt(signingResponse.balance) > 0) {
+      signingContractUsed = globalMultisig;
+    }
+  }
+
+  // Fall back to chain-specific MultisigProver (legacy pools)
+  if (!signingContractUsed && chain.multisigProverAddress) {
+    signingResponse = await queryRewardsPool(
       rewardsContract,
       chain.chainKey,
       chain.multisigProverAddress
     );
     if (signingResponse && parseInt(signingResponse.balance) > 0) {
-      const activeVerifiers = await queryActiveVerifiers(chain.chainKey);
-      signingPool = calculatePoolMetrics(
-        signingResponse,
-        activeVerifiers,
-        axlPrice,
-        chain.chainName,
-        'signing',
-        chain.multisigProverAddress
-      );
+      signingContractUsed = chain.multisigProverAddress;
     }
+  }
+
+  if (signingResponse && signingContractUsed) {
+    const activeVerifiers = await queryActiveVerifiers(chain.chainKey);
+    signingPool = calculatePoolMetrics(
+      signingResponse,
+      activeVerifiers,
+      axlPrice,
+      chain.chainName,
+      'signing',
+      signingContractUsed
+    );
   }
 
   const hasActivePools = votingPool !== null || signingPool !== null;
@@ -221,8 +243,8 @@ async function fetchChainRewards(
     (votingPool?.rewardsPerEpoch ?? 0) +
     (signingPool?.rewardsPerEpoch ?? 0);
   const totalRewardsPerEpoch =
-    (votingPool?.rewardsPerNewVerifierPerEpoch ?? 0) +
-    (signingPool?.rewardsPerNewVerifierPerEpoch ?? 0);
+    (votingPool?.rewardsPerVerifierPerEpoch ?? 0) +
+    (signingPool?.rewardsPerVerifierPerEpoch ?? 0);
   const totalWeeklyRewards =
     (votingPool?.estimatedWeeklyRewards ?? 0) +
     (signingPool?.estimatedWeeklyRewards ?? 0);

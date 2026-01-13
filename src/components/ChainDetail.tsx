@@ -34,7 +34,7 @@ function PoolCard({ pool, timePeriod }: PoolCardProps) {
     switch (timePeriod) {
       case 'epoch':
         return {
-          axl: pool.rewardsPerNewVerifierPerEpoch,
+          axl: pool.rewardsPerVerifierPerEpoch,
           usd: pool.epochRewardsUsd,
           label: 'Per Epoch',
         };
@@ -137,18 +137,8 @@ function PoolCard({ pool, timePeriod }: PoolCardProps) {
           <div className="text-[var(--text-primary)]">
             {(pool.participationThreshold * 100).toFixed(0)}%
           </div>
-        </div>
-
-        {/* Estimated Qualifying Verifiers */}
-        <div>
-          <div className="text-sm text-[var(--text-secondary)] mb-1">
-            Est. Qualifying Verifiers
-          </div>
-          <div className="text-[var(--text-primary)]">
-            ~{pool.estimatedQualifyingVerifiers}
-          </div>
           <div className="text-xs text-[var(--text-secondary)]">
-            (rewards split among those meeting threshold)
+            (min % of events you must participate in)
           </div>
         </div>
 
