@@ -88,6 +88,9 @@ export interface MainnetConfig {
       };
       VotingVerifier?: Record<string, VotingVerifierConfig>;
       MultisigProver?: Record<string, MultisigProverConfig>;
+      // XRPL uses separate contract types
+      XrplVotingVerifier?: Record<string, VotingVerifierConfig>;
+      XrplMultisigProver?: Record<string, MultisigProverConfig>;
     };
   };
   chains: Record<string, {

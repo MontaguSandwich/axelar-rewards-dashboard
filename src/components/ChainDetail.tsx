@@ -107,7 +107,7 @@ function PoolCard({ pool, timePeriod }: PoolCardProps) {
           </div>
           <div className="text-[var(--text-primary)]">
             {pool.epochDurationBlocks.toLocaleString()} blocks (~
-            {Math.round((pool.epochDurationBlocks * 5) / 3600)} hours)
+            {Math.round((pool.epochDurationBlocks * 1.84) / 3600)} hours)
           </div>
         </div>
 

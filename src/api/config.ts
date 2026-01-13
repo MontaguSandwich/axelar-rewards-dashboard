@@ -47,10 +47,13 @@ export async function getChainConfigs(): Promise<ChainConfig[]> {
   const chains: ChainConfig[] = [];
 
   // Get VotingVerifier and MultisigProver contracts from axelar.contracts
+  // Also include XRPL-specific contracts (XrplVotingVerifier, XrplMultisigProver)
   const votingVerifiers = config.axelar.contracts.VotingVerifier || {};
   const multisigProvers = config.axelar.contracts.MultisigProver || {};
+  const xrplVotingVerifiers = config.axelar.contracts.XrplVotingVerifier || {};
+  const xrplMultisigProvers = config.axelar.contracts.XrplMultisigProver || {};
 
-  // Collect all unique chain names from both contract types (filtering metadata)
+  // Collect all unique chain names from all contract types (filtering metadata)
   const chainNames = new Set<string>();
 
   for (const [key, value] of Object.entries(votingVerifiers)) {
@@ -65,9 +68,27 @@ export async function getChainConfigs(): Promise<ChainConfig[]> {
     }
   }
 
+  // Add XRPL chains from XRPL-specific contracts
+  for (const [key, value] of Object.entries(xrplVotingVerifiers)) {
+    if (isValidChainEntry(key, value)) {
+      chainNames.add(key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(xrplMultisigProvers)) {
+    if (isValidChainEntry(key, value)) {
+      chainNames.add(key);
+    }
+  }
+
   for (const chainKey of chainNames) {
-    const votingVerifier = votingVerifiers[chainKey]?.address || null;
-    const multisigProver = multisigProvers[chainKey]?.address || null;
+    // Check both regular and XRPL-specific contracts for addresses
+    const votingVerifier = votingVerifiers[chainKey]?.address
+      || xrplVotingVerifiers[chainKey]?.address
+      || null;
+    const multisigProver = multisigProvers[chainKey]?.address
+      || xrplMultisigProvers[chainKey]?.address
+      || null;
 
     // Get chain info from chains object if available
     const chainData = config.chains[chainKey];

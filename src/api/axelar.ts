@@ -6,9 +6,9 @@ import { fetchAxlPrice } from './prices';
 // Use LCD (REST) API - more reliable and CORS-friendly
 const LCD_ENDPOINT = 'https://axelar-lcd.publicnode.com';
 
-// Axelar block time is ~5 seconds (verified from docs.axelar.dev)
-const BLOCK_TIME_SECONDS = 5;
-const BLOCKS_PER_DAY = (24 * 60 * 60) / BLOCK_TIME_SECONDS; // ~17,280
+// Axelar block time is ~1.84 seconds (verified on-chain)
+const BLOCK_TIME_SECONDS = 1.84;
+const BLOCKS_PER_DAY = (24 * 60 * 60) / BLOCK_TIME_SECONDS; // ~46,956
 const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7;
 const BLOCKS_PER_MONTH = BLOCKS_PER_DAY * 30;
 
@@ -100,7 +100,9 @@ function calculatePoolMetrics(
 
   // IMPORTANT: Rewards are only distributed to verifiers who meet the participation threshold.
   // Not all active verifiers qualify - only those meeting the threshold (e.g., 80%) receive rewards.
-  // We estimate the number of qualifying verifiers based on the participation threshold.
+  // The on-chain Rewards contract doesn't expose a query for aggregate qualifying verifier count;
+  // only individual VerifierParticipation can be queried (which would require N API calls).
+  // We estimate qualifying verifiers as: activeVerifiers * participationThreshold
   // This provides a more accurate reward estimate than dividing by all active verifiers.
   const estimatedQualifyingVerifiers = Math.max(1, Math.ceil(activeVerifiers * participationThreshold));
 
