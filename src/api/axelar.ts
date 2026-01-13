@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { ChainConfig, ChainRewardsData, RewardsPoolData, RewardsPoolResponse } from '../types';
-import { getRewardsContractAddress, getChainConfigs, getServiceRegistryAddress } from './config';
+import { getRewardsContractAddress, getChainConfigs, getServiceRegistryAddress, getGlobalMultisigAddress } from './config';
 import { fetchAxlPrice } from './prices';
 
 // Use LCD (REST) API - more reliable and CORS-friendly
@@ -140,18 +140,20 @@ function calculatePoolMetrics(
 export async function fetchAllChainRewards(): Promise<ChainRewardsData[]> {
   console.log('Fetching all chain rewards...');
 
-  const [chainConfigs, rewardsContract, axlPrice] = await Promise.all([
+  const [chainConfigs, rewardsContract, axlPrice, globalMultisig] = await Promise.all([
     getChainConfigs(),
     getRewardsContractAddress(),
     fetchAxlPrice(),
+    getGlobalMultisigAddress(),
   ]);
 
   console.log('Chain configs:', chainConfigs);
   console.log('Rewards contract:', rewardsContract);
+  console.log('Global Multisig:', globalMultisig);
   console.log('AXL price:', axlPrice);
 
   const chainRewardsPromises = chainConfigs.map(async (chain) => {
-    return fetchChainRewards(chain, rewardsContract, axlPrice);
+    return fetchChainRewards(chain, rewardsContract, axlPrice, globalMultisig);
   });
 
   const results = await Promise.all(chainRewardsPromises);
@@ -168,7 +170,8 @@ export async function fetchAllChainRewards(): Promise<ChainRewardsData[]> {
 async function fetchChainRewards(
   chain: ChainConfig,
   rewardsContract: string,
-  axlPrice: number
+  axlPrice: number,
+  globalMultisig: string | null
 ): Promise<ChainRewardsData> {
   let votingPool: RewardsPoolData | null = null;
   let signingPool: RewardsPoolData | null = null;
@@ -193,24 +196,45 @@ async function fetchChainRewards(
     }
   }
 
-  // Query signing pool
-  if (chain.multisigProverAddress) {
-    const signingResponse = await queryRewardsPool(
+  // Query signing pool - use global Multisig FIRST (per governance),
+  // then fall back to chain-specific MultisigProver
+  let signingResponse = null;
+  let signingContractUsed = null;
+
+  // Try global Multisig first (governance proposals configure pools here)
+  if (globalMultisig) {
+    signingResponse = await queryRewardsPool(
+      rewardsContract,
+      chain.chainKey,
+      globalMultisig
+    );
+    if (signingResponse && parseInt(signingResponse.balance) > 0) {
+      signingContractUsed = globalMultisig;
+    }
+  }
+
+  // Fall back to chain-specific MultisigProver (legacy pools)
+  if (!signingContractUsed && chain.multisigProverAddress) {
+    signingResponse = await queryRewardsPool(
       rewardsContract,
       chain.chainKey,
       chain.multisigProverAddress
     );
     if (signingResponse && parseInt(signingResponse.balance) > 0) {
-      const activeVerifiers = await queryActiveVerifiers(chain.chainKey);
-      signingPool = calculatePoolMetrics(
-        signingResponse,
-        activeVerifiers,
-        axlPrice,
-        chain.chainName,
-        'signing',
-        chain.multisigProverAddress
-      );
+      signingContractUsed = chain.multisigProverAddress;
     }
+  }
+
+  if (signingResponse && signingContractUsed) {
+    const activeVerifiers = await queryActiveVerifiers(chain.chainKey);
+    signingPool = calculatePoolMetrics(
+      signingResponse,
+      activeVerifiers,
+      axlPrice,
+      chain.chainName,
+      'signing',
+      signingContractUsed
+    );
   }
 
   const hasActivePools = votingPool !== null || signingPool !== null;

@@ -86,6 +86,8 @@ export interface MainnetConfig {
       };
       VotingVerifier?: Record<string, VotingVerifierConfig>;
       MultisigProver?: Record<string, MultisigProverConfig>;
+      // Global Multisig contract - signing pools use this (per governance)
+      Multisig?: { address: string };
       // XRPL uses separate contract types
       XrplVotingVerifier?: Record<string, VotingVerifierConfig>;
       XrplMultisigProver?: Record<string, MultisigProverConfig>;

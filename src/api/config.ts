@@ -25,6 +25,11 @@ export async function getServiceRegistryAddress(): Promise<string> {
   return config.axelar.contracts.ServiceRegistry.address;
 }
 
+export async function getGlobalMultisigAddress(): Promise<string | null> {
+  const config = await fetchMainnetConfig();
+  return config.axelar.contracts.Multisig?.address || null;
+}
+
 // Metadata keys to filter out (not actual chains)
 const METADATA_KEYS = new Set([
   'codeId',

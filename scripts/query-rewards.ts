@@ -204,26 +204,27 @@ async function main() {
       console.log('No voting verifier contract');
     }
 
-    // Query signing pool - try chain-specific MultisigProver first, then global Multisig
+    // Query signing pool - try global Multisig FIRST (per governance proposal),
+    // then fall back to chain-specific MultisigProver
     console.log('\n--- SIGNING POOL ---');
     let signingPool: PoolResponse | null = null;
     let signingContract: string | null = null;
 
-    // Try chain-specific MultisigProver first
-    if (chain.multisigProver) {
-      console.log(`Trying chain-specific MultisigProver: ${chain.multisigProver}`);
-      signingPool = await queryRewardsPool(rewardsContract, chain.chainKey, chain.multisigProver);
-      if (signingPool) {
-        signingContract = chain.multisigProver;
-      }
-    }
-
-    // If no pool found, try global Multisig
-    if (!signingPool && globalMultisig) {
+    // Try global Multisig FIRST (governance proposals configure pools here)
+    if (globalMultisig) {
       console.log(`Trying global Multisig: ${globalMultisig}`);
       signingPool = await queryRewardsPool(rewardsContract, chain.chainKey, globalMultisig);
       if (signingPool) {
         signingContract = globalMultisig;
+      }
+    }
+
+    // Fall back to chain-specific MultisigProver (legacy pools)
+    if (!signingPool && chain.multisigProver) {
+      console.log(`Trying chain-specific MultisigProver: ${chain.multisigProver}`);
+      signingPool = await queryRewardsPool(rewardsContract, chain.chainKey, chain.multisigProver);
+      if (signingPool) {
+        signingContract = chain.multisigProver;
       }
     }
 
