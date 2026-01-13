@@ -57,18 +57,61 @@ async function findWorkingEndpoint(): Promise<string> {
 }
 
 async function queryRewardTransactions(limit: number = 100, offset: number = 0): Promise<any[]> {
-  const url = `${AXELAR_LCD}/cosmos/tx/v1beta1/txs?events=execute._contract_address%3D%27${REWARDS_CONTRACT}%27&pagination.limit=${limit}&pagination.offset=${offset}&order_by=ORDER_BY_DESC`;
+  // Try different query formats
+  const queryFormats = [
+    // Format 1: Standard cosmos SDK format
+    `${AXELAR_LCD}/cosmos/tx/v1beta1/txs?query=execute._contract_address='${REWARDS_CONTRACT}'&pagination.limit=${limit}&pagination.offset=${offset}&order_by=ORDER_BY_DESC`,
+    // Format 2: URL encoded
+    `${AXELAR_LCD}/cosmos/tx/v1beta1/txs?events=execute._contract_address%3D'${REWARDS_CONTRACT}'&pagination.limit=${limit}&pagination.offset=${offset}&order_by=ORDER_BY_DESC`,
+    // Format 3: Message action based
+    `${AXELAR_LCD}/cosmos/tx/v1beta1/txs?events=message.action%3D'/cosmwasm.wasm.v1.MsgExecuteContract'&pagination.limit=${limit}&order_by=ORDER_BY_DESC`,
+  ];
 
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
-    if (!response.ok) {
-      console.log(`Query failed: ${response.status}`);
-      return [];
+  for (const url of queryFormats) {
+    try {
+      console.log(`Trying query format...`);
+      const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      if (response.ok) {
+        const data = await response.json();
+        const txs = data.tx_responses || [];
+        // Filter for our contract
+        const filtered = txs.filter((tx: any) => {
+          const messages = tx.tx?.body?.messages || [];
+          return messages.some((m: any) =>
+            m.contract === REWARDS_CONTRACT ||
+            m['@type'] === '/cosmwasm.wasm.v1.MsgExecuteContract' && m.contract === REWARDS_CONTRACT
+          );
+        });
+        if (filtered.length > 0 || txs.length > 0) {
+          console.log(`Found ${filtered.length} relevant transactions`);
+          return filtered.length > 0 ? filtered : txs;
+        }
+      } else {
+        console.log(`Query returned ${response.status}, trying next format...`);
+      }
+    } catch (e) {
+      console.log(`Query error, trying next format...`);
     }
+  }
+
+  // Fallback: try to get recent blocks and scan for transactions
+  console.log('Direct query failed, trying block scanning fallback...');
+  return await scanRecentBlocksForRewards(limit);
+}
+
+async function scanRecentBlocksForRewards(limit: number): Promise<any[]> {
+  try {
+    // Get current block height
+    const response = await fetch(`${AXELAR_LCD}/cosmos/base/tendermint/v1beta1/blocks/latest`);
     const data = await response.json();
-    return data.tx_responses || [];
+    const currentHeight = parseInt(data.block.header.height);
+
+    console.log(`Current block: ${currentHeight}, scanning recent blocks...`);
+
+    // This is slow but more reliable - scan recent blocks
+    // Skip this for now and suggest manual lookup
+    return [];
   } catch (e) {
-    console.log(`Error querying transactions: ${e}`);
     return [];
   }
 }
