@@ -64,6 +64,33 @@ export interface ChainRewardsData {
 
 export type TimePeriod = 'epoch' | 'weekly' | 'monthly';
 
+// Verifier Performance Types
+export interface Verifier {
+  address: string;
+  bondedAmount: number; // in AXL
+}
+
+export interface EpochPerformance {
+  epochNum: number;
+  sessionsInEpoch: number;
+  sessionsSigned: number;
+  participationRate: number;
+  qualified: boolean; // >= 80%
+}
+
+export interface VerifierChainData {
+  chainName: string;
+  currentEpoch: number;
+  lastDistributionEpoch: number;
+  unpaidEpochCount: number;
+  activeVerifiers: number;
+  poolRewardsPerEpoch: number; // Total pool rewards
+  rewardsPerVerifierPerEpoch: number; // Per verifier share
+  epochPerformance: EpochPerformance[];
+  qualifiedEpochs: number;
+  estimatedPendingRewards: number;
+}
+
 interface VotingVerifierConfig {
   address: string;
   serviceName?: string;
