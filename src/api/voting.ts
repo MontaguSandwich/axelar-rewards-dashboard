@@ -88,11 +88,32 @@ async function findLatestPollId(votingVerifierContract: string): Promise<number>
     }
   }
 
-  // Fallback to binary search if poll_id query doesn't work
+  // First check if poll 1 even exists - if not, this contract may have no polls
+  const poll1 = await queryContract(votingVerifierContract, { poll: { poll_id: "1" } });
+  if (!poll1 || !poll1.poll) {
+    console.log('Poll 1 does not exist - this chain may have no voting polls yet');
+    return 0; // Return 0 to indicate no polls
+  }
+
+  // Binary search with smaller initial range
   let low = 1;
-  let high = 100000;
+  let high = 1000; // Start smaller
   let latestPoll = 1;
 
+  // First find a rough upper bound
+  while (high <= 100000) {
+    const result = await queryContract(votingVerifierContract, { poll: { poll_id: high.toString() } });
+    if (result && result.poll) {
+      latestPoll = high;
+      low = high;
+      high *= 2;
+    } else {
+      break;
+    }
+  }
+
+  // Now binary search within the range
+  high = Math.min(high, 100000);
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     const result = await queryContract(votingVerifierContract, { poll: { poll_id: mid.toString() } });
@@ -156,6 +177,24 @@ export async function fetchVotingPerformance(
     log('Finding latest poll...');
     const latestPollId = await findLatestPollId(votingVerifierAddress);
     log(`Latest poll: ${latestPollId}`);
+
+    // If no polls exist, return early with empty data
+    if (latestPollId === 0) {
+      log('No voting polls found for this chain');
+      return {
+        chainName,
+        votingVerifierAddress,
+        currentEpoch: poolInfo.currentEpoch,
+        lastDistributionEpoch: poolInfo.lastDistributionEpoch,
+        unpaidEpochCount: poolInfo.currentEpoch - poolInfo.lastDistributionEpoch,
+        activeVerifiers: 0,
+        poolRewardsPerEpoch: poolInfo.rewardsPerEpoch,
+        rewardsPerVerifierPerEpoch: 0,
+        epochPerformance: [],
+        qualifiedEpochs: 0,
+        estimatedPendingRewards: 0
+      };
+    }
 
     // Get latest poll to estimate active verifiers
     const latestPoll = await getPollDetails(votingVerifierAddress, latestPollId);

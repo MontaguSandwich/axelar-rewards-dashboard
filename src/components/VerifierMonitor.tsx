@@ -581,6 +581,15 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
             </div>
           )}
 
+          {/* Voting Pool - No Polls */}
+          {activePoolTab === 'voting' && votingData && votingData.epochPerformance.length === 0 && (
+            <div className="bg-[var(--bg-secondary)] rounded-xl p-8 border border-[var(--border-color)] text-center">
+              <div className="text-[var(--text-secondary)]">
+                No voting polls found for this chain yet. The VotingVerifier contract exists but no polls have been created.
+              </div>
+            </div>
+          )}
+
           {/* Info Note */}
           <div className="bg-[var(--bg-secondary)] rounded-xl p-4 border border-[var(--border-color)]">
             <div className="flex gap-3">
