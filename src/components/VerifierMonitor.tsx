@@ -1,34 +1,78 @@
-import { useState, useEffect } from 'react';
-import type { Verifier, VerifierChainData } from '../types';
+import { useState, useEffect, useRef } from 'react';
+import type { Verifier, VerifierChainData, ChainConfig } from '../types';
 import { fetchAllVerifiers, fetchVerifierPerformance } from '../api/verifier';
+import { getChainConfigs } from '../api/config';
 
 interface VerifierMonitorProps {
   axlPrice: number | null;
 }
 
 export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
+  // Chain selection
+  const [chains, setChains] = useState<ChainConfig[]>([]);
+  const [selectedChain, setSelectedChain] = useState<string>('flow');
+  const [isLoadingChains, setIsLoadingChains] = useState(true);
+
+  // Verifier selection
   const [verifiers, setVerifiers] = useState<Verifier[]>([]);
   const [selectedAddress, setSelectedAddress] = useState('');
-  const [inputAddress, setInputAddress] = useState('');
-  const [chainData, setChainData] = useState<VerifierChainData | null>(null);
+  const [isVerifierDropdownOpen, setIsVerifierDropdownOpen] = useState(false);
   const [isLoadingVerifiers, setIsLoadingVerifiers] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Performance data
+  const [chainData, setChainData] = useState<VerifierChainData | null>(null);
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(false);
   const [progressMessage, setProgressMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Load verifiers on mount
+  // Load chains on mount
   useEffect(() => {
-    loadVerifiers();
+    loadChains();
   }, []);
 
-  const loadVerifiers = async () => {
+  // Load verifiers when chain changes
+  useEffect(() => {
+    if (selectedChain) {
+      loadVerifiers(selectedChain);
+      // Clear previous selection and data
+      setSelectedAddress('');
+      setChainData(null);
+    }
+  }, [selectedChain]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsVerifierDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const loadChains = async () => {
+    setIsLoadingChains(true);
+    try {
+      const chainConfigs = await getChainConfigs();
+      setChains(chainConfigs);
+    } catch (err) {
+      console.error('Failed to load chains:', err);
+    } finally {
+      setIsLoadingChains(false);
+    }
+  };
+
+  const loadVerifiers = async (chainName: string) => {
     setIsLoadingVerifiers(true);
     setError(null);
     try {
-      const data = await fetchAllVerifiers('flow');
+      const data = await fetchAllVerifiers(chainName);
       setVerifiers(data);
     } catch (err) {
-      setError('Failed to load verifiers');
+      setError('Failed to load verifiers for this chain');
+      setVerifiers([]);
     } finally {
       setIsLoadingVerifiers(false);
     }
@@ -36,11 +80,13 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
 
   const handleVerifierSelect = (address: string) => {
     setSelectedAddress(address);
-    setInputAddress(address);
+    setIsVerifierDropdownOpen(false);
+    // Auto-lookup when selecting from dropdown
+    handleLookup(address);
   };
 
-  const handleLookup = async () => {
-    const addressToLookup = inputAddress.trim();
+  const handleLookup = async (addressOverride?: string) => {
+    const addressToLookup = addressOverride || selectedAddress;
     if (!addressToLookup) return;
 
     setIsLoadingPerformance(true);
@@ -51,14 +97,13 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
     try {
       const data = await fetchVerifierPerformance(
         addressToLookup,
-        'flow',
+        selectedChain,
         5,
         (msg) => setProgressMessage(msg)
       );
 
       if (data) {
         setChainData(data);
-        setSelectedAddress(addressToLookup);
       } else {
         setError('Could not fetch performance data for this verifier');
       }
@@ -84,6 +129,8 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
     );
   };
 
+  const selectedVerifier = verifiers.find(v => v.address === selectedAddress);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -96,33 +143,101 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
         </p>
       </div>
 
-      {/* Verifier Selection */}
+      {/* Chain & Verifier Selection */}
       <div className="bg-[var(--bg-secondary)] rounded-xl p-6 border border-[var(--border-color)]">
-        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-          Select Verifier
-        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Chain Selector */}
+          <div>
+            <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+              Select Chain
+            </label>
+            <select
+              value={selectedChain}
+              onChange={(e) => setSelectedChain(e.target.value)}
+              disabled={isLoadingChains}
+              className="w-full px-4 py-2.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)] cursor-pointer"
+            >
+              {isLoadingChains ? (
+                <option>Loading chains...</option>
+              ) : (
+                chains.map((chain) => (
+                  <option key={chain.chainKey} value={chain.chainKey}>
+                    {chain.chainName}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
 
-        {/* Manual Input */}
-        <div className="flex gap-3 mb-6">
-          <input
-            type="text"
-            value={inputAddress}
-            onChange={(e) => setInputAddress(e.target.value)}
-            placeholder="Enter verifier address (axelar1...)"
-            className="flex-1 px-4 py-2 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
-          />
-          <button
-            onClick={handleLookup}
-            disabled={isLoadingPerformance || !inputAddress.trim()}
-            className="px-6 py-2 rounded-lg bg-[var(--accent-blue)] text-white font-medium hover:bg-[var(--accent-blue)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {isLoadingPerformance ? 'Loading...' : 'Look Up'}
-          </button>
+          {/* Verifier Dropdown */}
+          <div ref={dropdownRef} className="relative">
+            <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+              Select Verifier
+            </label>
+            <button
+              onClick={() => setIsVerifierDropdownOpen(!isVerifierDropdownOpen)}
+              disabled={isLoadingVerifiers}
+              className="w-full px-4 py-2.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
+            >
+              <span className={selectedAddress ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}>
+                {isLoadingVerifiers ? (
+                  'Loading verifiers...'
+                ) : selectedAddress ? (
+                  <span className="font-mono text-sm">
+                    {selectedAddress.slice(0, 12)}...{selectedAddress.slice(-8)}
+                    {selectedVerifier && (
+                      <span className="text-[var(--text-secondary)] ml-2">
+                        ({selectedVerifier.bondedAmount.toLocaleString()} AXL)
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  `Select from ${verifiers.length} verifiers`
+                )}
+              </span>
+              <svg
+                className={`w-5 h-5 text-[var(--text-secondary)] transition-transform ${isVerifierDropdownOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {isVerifierDropdownOpen && verifiers.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                {verifiers.map((v) => (
+                  <button
+                    key={v.address}
+                    onClick={() => handleVerifierSelect(v.address)}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                      selectedAddress === v.address
+                        ? 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]'
+                        : 'hover:bg-[var(--bg-primary)] text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <span className="font-mono">{v.address.slice(0, 16)}...{v.address.slice(-8)}</span>
+                    <span className="text-[var(--text-secondary)] ml-2">
+                      ({v.bondedAmount.toLocaleString()} AXL)
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {isVerifierDropdownOpen && verifiers.length === 0 && !isLoadingVerifiers && (
+              <div className="absolute z-50 w-full mt-1 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-lg p-4 text-center text-[var(--text-secondary)]">
+                No verifiers found for this chain
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Progress Message */}
         {progressMessage && (
-          <div className="mb-4 text-sm text-[var(--text-secondary)] flex items-center gap-2">
+          <div className="mt-4 text-sm text-[var(--text-secondary)] flex items-center gap-2">
             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -130,51 +245,6 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
             {progressMessage}
           </div>
         )}
-
-        {/* Verifier List */}
-        <div className="border-t border-[var(--border-color)] pt-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-medium text-[var(--text-secondary)]">
-              Active Verifiers (Flow)
-            </h4>
-            <button
-              onClick={loadVerifiers}
-              disabled={isLoadingVerifiers}
-              className="text-sm text-[var(--accent-blue)] hover:underline disabled:opacity-50"
-            >
-              {isLoadingVerifiers ? 'Loading...' : 'Refresh'}
-            </button>
-          </div>
-
-          {isLoadingVerifiers ? (
-            <div className="text-center py-8 text-[var(--text-secondary)]">
-              Loading verifiers...
-            </div>
-          ) : verifiers.length === 0 ? (
-            <div className="text-center py-8 text-[var(--text-secondary)]">
-              No verifiers found
-            </div>
-          ) : (
-            <div className="max-h-48 overflow-y-auto space-y-1">
-              {verifiers.map((v) => (
-                <button
-                  key={v.address}
-                  onClick={() => handleVerifierSelect(v.address)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    selectedAddress === v.address
-                      ? 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]'
-                      : 'hover:bg-[var(--bg-primary)] text-[var(--text-primary)]'
-                  }`}
-                >
-                  <span className="font-mono">{v.address}</span>
-                  <span className="text-[var(--text-secondary)] ml-2">
-                    ({v.bondedAmount.toLocaleString()} AXL bonded)
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Error Display */}
@@ -337,7 +407,7 @@ export function VerifierMonitor({ axlPrice }: VerifierMonitorProps) {
             Select a Verifier
           </h3>
           <p className="text-[var(--text-secondary)] max-w-md mx-auto">
-            Enter a verifier address above or select one from the list to view their signing performance and pending rewards.
+            Choose a chain and select a verifier from the dropdown to view their signing performance and pending rewards.
           </p>
         </div>
       )}
