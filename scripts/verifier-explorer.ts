@@ -219,6 +219,24 @@ async function getVerifierChainPerformance(
     epochPolls.set(epoch, { total: 0, voted: 0 });
   }
 
+  // Debug: print first few polls to see their expires_at values
+  console.log(`    Checking poll expires_at values...`);
+  for (let i = 0; i < 3; i++) {
+    const pollId = latestPollId - i;
+    const poll = await getPollDetails(votingVerifier, pollId);
+    if (poll) {
+      console.log(`    Poll ${pollId}: expires_at = ${poll.expiresAt}`);
+    }
+  }
+
+  // Print epoch ranges for comparison
+  console.log(`    Epoch ranges:`);
+  for (const [epoch, range] of epochRanges) {
+    if (epoch >= currentEpoch - 2) { // Just show last few
+      console.log(`      Epoch ${epoch}: blocks ${range.start} - ${range.end}`);
+    }
+  }
+
   // Scan polls and map to epochs based on expires_at block height
   console.log(`    Scanning polls ${Math.max(1, latestPollId - 500)} to ${latestPollId}...`);
 
