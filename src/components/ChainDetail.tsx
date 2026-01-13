@@ -107,7 +107,7 @@ function PoolCard({ pool, timePeriod }: PoolCardProps) {
           </div>
           <div className="text-[var(--text-primary)]">
             {pool.epochDurationBlocks.toLocaleString()} blocks (~
-            {Math.round((pool.epochDurationBlocks * 6) / 3600)} hours)
+            {Math.round((pool.epochDurationBlocks * 1.84) / 3600)} hours)
           </div>
         </div>
 
@@ -136,6 +136,19 @@ function PoolCard({ pool, timePeriod }: PoolCardProps) {
           </div>
           <div className="text-[var(--text-primary)]">
             {(pool.participationThreshold * 100).toFixed(0)}%
+          </div>
+        </div>
+
+        {/* Estimated Qualifying Verifiers */}
+        <div>
+          <div className="text-sm text-[var(--text-secondary)] mb-1">
+            Est. Qualifying Verifiers
+          </div>
+          <div className="text-[var(--text-primary)]">
+            ~{pool.estimatedQualifyingVerifiers}
+          </div>
+          <div className="text-xs text-[var(--text-secondary)]">
+            (rewards split among those meeting threshold)
           </div>
         </div>
 

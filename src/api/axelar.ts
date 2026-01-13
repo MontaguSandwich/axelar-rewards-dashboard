@@ -1,14 +1,14 @@
 import axios from 'axios';
 import type { ChainConfig, ChainRewardsData, RewardsPoolData, RewardsPoolResponse } from '../types';
-import { getRewardsContractAddress, getChainConfigs } from './config';
+import { getRewardsContractAddress, getChainConfigs, getServiceRegistryAddress } from './config';
 import { fetchAxlPrice } from './prices';
 
 // Use LCD (REST) API - more reliable and CORS-friendly
 const LCD_ENDPOINT = 'https://axelar-lcd.publicnode.com';
 
-// Axelar block time is ~6 seconds
-const BLOCK_TIME_SECONDS = 6;
-const BLOCKS_PER_DAY = (24 * 60 * 60) / BLOCK_TIME_SECONDS; // ~14,400
+// Axelar block time is ~1.84 seconds (verified on-chain)
+const BLOCK_TIME_SECONDS = 1.84;
+const BLOCKS_PER_DAY = (24 * 60 * 60) / BLOCK_TIME_SECONDS; // ~46,956
 const BLOCKS_PER_WEEK = BLOCKS_PER_DAY * 7;
 const BLOCKS_PER_MONTH = BLOCKS_PER_DAY * 30;
 
@@ -44,10 +44,19 @@ async function queryRewardsPool(
   }
 }
 
-const SERVICE_REGISTRY = 'axelar1rpj2jjrv3vpugx9ake9kgk3s2kgwt0y60wtkmcgfml5m3et0mrls6nct9m';
+// Cached service registry address (fetched dynamically from config)
+let cachedServiceRegistry: string | null = null;
+
+async function getServiceRegistry(): Promise<string> {
+  if (!cachedServiceRegistry) {
+    cachedServiceRegistry = await getServiceRegistryAddress();
+  }
+  return cachedServiceRegistry;
+}
 
 async function queryActiveVerifiers(chainName: string): Promise<number> {
   try {
+    const serviceRegistry = await getServiceRegistry();
     const query = {
       active_verifiers: {
         service_name: 'amplifier',
@@ -56,7 +65,7 @@ async function queryActiveVerifiers(chainName: string): Promise<number> {
     };
 
     const queryBase64 = btoa(JSON.stringify(query));
-    const url = `${LCD_ENDPOINT}/cosmwasm/wasm/v1/contract/${SERVICE_REGISTRY}/smart/${queryBase64}`;
+    const url = `${LCD_ENDPOINT}/cosmwasm/wasm/v1/contract/${serviceRegistry}/smart/${queryBase64}`;
 
     console.log(`Querying active verifiers for ${chainName}`);
     const response = await axios.get(url);
@@ -89,9 +98,17 @@ function calculatePoolMetrics(
     parseInt(poolResponse.participation_threshold[0]) /
     parseInt(poolResponse.participation_threshold[1]);
 
-  // Calculate for a NEW verifier joining (current + 1)
-  const newVerifierCount = activeVerifiers + 1;
-  const rewardsPerNewVerifierPerEpoch = rewardsPerEpoch / newVerifierCount;
+  // IMPORTANT: Rewards are only distributed to verifiers who meet the participation threshold.
+  // Not all active verifiers qualify - only those meeting the threshold (e.g., 80%) receive rewards.
+  // The on-chain Rewards contract doesn't expose a query for aggregate qualifying verifier count;
+  // only individual VerifierParticipation can be queried (which would require N API calls).
+  // We estimate qualifying verifiers as: activeVerifiers * participationThreshold
+  // This provides a more accurate reward estimate than dividing by all active verifiers.
+  const estimatedQualifyingVerifiers = Math.max(1, Math.ceil(activeVerifiers * participationThreshold));
+
+  // Calculate for a NEW verifier joining (assuming they will meet the threshold)
+  const qualifyingWithNewVerifier = estimatedQualifyingVerifiers + 1;
+  const rewardsPerNewVerifierPerEpoch = rewardsPerEpoch / qualifyingWithNewVerifier;
 
   // Calculate epochs per time period
   const epochsPerWeek = BLOCKS_PER_WEEK / epochDurationBlocks;
@@ -110,6 +127,7 @@ function calculatePoolMetrics(
     currentEpoch,
     participationThreshold,
     activeVerifiers,
+    estimatedQualifyingVerifiers,
     rewardsPerNewVerifierPerEpoch,
     estimatedWeeklyRewards,
     estimatedMonthlyRewards,
