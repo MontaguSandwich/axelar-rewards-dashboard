@@ -104,27 +104,72 @@ async function main() {
   // After discovering available queries, try them with proper params
   console.log('\n');
   console.log('─'.repeat(70));
-  console.log('TRYING DISCOVERED QUERIES WITH PARAMS');
+  console.log('QUERYING DISCOVERED METHODS');
   console.log('─'.repeat(70));
 
-  // Based on typical multisig patterns, try these
-  const detailedQueries = [
-    // Key-related
-    { get_key: { key_id: "1" } },
-    { key: { key_id: "1" } },
+  // Query verifier_set
+  await tryQuery(GLOBAL_MULTISIG, { verifier_set: {} }, 'verifier_set');
 
-    // Session-related
-    { get_signing_session: { session_id: "1" } },
-    { signing_session: { session_id: "1" } },
-    { session: { id: "1" } },
+  // Query signing_parameters
+  await tryQuery(GLOBAL_MULTISIG, { signing_parameters: {} }, 'signing_parameters');
 
-    // Multisig state
-    { get_multisig: { session_id: "1" } },
-    { multisig: { session_id: "1" } },
-  ];
+  // Query multiple multisig sessions to see the data structure
+  console.log('\n\nMultisig Sessions:');
+  for (const sessionId of ['1', '10', '50', '100', '500', '1000', '2000']) {
+    const result = await queryContract(GLOBAL_MULTISIG, { multisig: { session_id: sessionId } });
+    if (result && !result.error) {
+      const state = result.state;
+      const completedAt = state?.completed?.completed_at || state?.pending || 'unknown';
+      const signerCount = Object.keys(result.verifier_set?.signers || {}).length;
 
-  for (const query of detailedQueries) {
-    await tryQuery(GLOBAL_MULTISIG, query, Object.keys(query)[0]);
+      // Check if there's signature/participation data
+      const signatures = result.signatures || result.sigs || null;
+      const participants = result.participants || null;
+
+      console.log(`  Session ${sessionId}:`);
+      console.log(`    State: ${JSON.stringify(state).slice(0, 100)}`);
+      console.log(`    Signers: ${signerCount}`);
+      if (signatures) console.log(`    Signatures: ${JSON.stringify(signatures).slice(0, 100)}`);
+      if (participants) console.log(`    Participants: ${JSON.stringify(participants).slice(0, 100)}`);
+
+      // Print full result for first session to see structure
+      if (sessionId === '1000') {
+        console.log(`\n  Full session ${sessionId} data:`);
+        console.log(JSON.stringify(result, null, 2).slice(0, 2000));
+      }
+    } else {
+      console.log(`  Session ${sessionId}: Not found or error`);
+    }
+  }
+
+  // Find latest session ID using binary search
+  console.log('\n\nFinding latest session ID...');
+  let low = 1;
+  let high = 100000;
+  let latestSession = 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const result = await queryContract(GLOBAL_MULTISIG, { multisig: { session_id: mid.toString() } });
+    if (result && !result.error) {
+      latestSession = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  console.log(`  Latest session ID: ${latestSession}`);
+
+  // Query recent sessions
+  console.log('\n\nRecent Sessions:');
+  for (let i = 0; i < 5; i++) {
+    const sessionId = latestSession - i;
+    const result = await queryContract(GLOBAL_MULTISIG, { multisig: { session_id: sessionId.toString() } });
+    if (result && !result.error) {
+      const completedAt = result.state?.completed?.completed_at;
+      const signerCount = Object.keys(result.verifier_set?.signers || {}).length;
+      console.log(`  Session ${sessionId}: completed_at=${completedAt}, signers=${signerCount}`);
+    }
   }
 
   // Also check the rewards contract's verifier_participation for signing
