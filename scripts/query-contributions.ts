@@ -16,8 +16,8 @@ let AXELAR_LCD = LCD_ENDPOINTS[0];
 const REWARDS_CONTRACT = 'axelar1harq5xe68lzl2kx4e5ch4k8840cgqnry567g0fgw7vt2atcuugrqfa7j5z';
 const GLOBAL_MULTISIG = 'axelar14a4ar5jh7ue4wg28jwsspf23r8k68j7g5d6d3fsttrhp42ajn4xq6zayy5';
 
-// Sample VotingVerifier for Flow
-const FLOW_VOTING_VERIFIER = 'axelar1m4semgh98pk8dp3lgfv8ul47x7fwt0ynqapek9fy0szhmc36l3aqhz47vu';
+// Correct Flow VotingVerifier address (from Jan 1 tx data)
+const FLOW_VOTING_VERIFIER = 'axelar1kkqdsqvwq9a7p9fj0w89wpx2m2t0vrxl782aslhq0kdw2xxd2aesv3un04';
 
 async function findWorkingEndpoint(): Promise<string> {
   for (const endpoint of LCD_ENDPOINTS) {
@@ -97,25 +97,53 @@ async function main() {
     }
   }, 'Flow signing pool');
 
-  // 3. Try to query verifier participation/tally
+  // 3. Query verifier_participation for both pools
   console.log('\n' + '─'.repeat(60));
-  console.log('3. EXPLORING PARTICIPATION QUERIES');
+  console.log('3. VERIFIER PARTICIPATION QUERIES');
   console.log('─'.repeat(60));
 
-  // Try various query formats that might exist
-  const participationQueries = [
-    { epoch_tally: { pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER }, epoch_num: 500 } },
-    { tally: { pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER }, epoch_num: 500 } },
-    { verifier_participation: { pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER } } },
-    { participation: { pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER } } },
-    { rewards_by_verifier: { pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER } } },
-    { pending_rewards: { pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER } } },
+  // Get a sample verifier from the service registry query we'll do later
+  const sampleVerifiers = [
+    'axelar15k8d4hqgytdxmcx3lhph2qagvt0r7683cchglj',
+    'axelar16g3c4z0dx3qcplhqfln92p20mkqdj9cr0wyrsh',
+    'axelar1t23g23u5pcuh9y2stzesf4cx5z3jr66zykkffm',
   ];
 
-  for (const query of participationQueries) {
-    await tryQuery(REWARDS_CONTRACT, query, Object.keys(query)[0]);
-    console.log('');
+  // Query verifier_participation for voting pool
+  console.log('\nVoting Pool Participation:');
+  for (const verifier of sampleVerifiers.slice(0, 2)) {
+    await tryQuery(REWARDS_CONTRACT, {
+      verifier_participation: {
+        pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER },
+        verifier: verifier
+      }
+    }, `verifier_participation (voting) - ${verifier.slice(0, 15)}...`);
   }
+
+  // Query verifier_participation for signing pool (global multisig)
+  console.log('\nSigning Pool Participation:');
+  for (const verifier of sampleVerifiers.slice(0, 2)) {
+    await tryQuery(REWARDS_CONTRACT, {
+      verifier_participation: {
+        pool_id: { chain_name: 'flow', contract: GLOBAL_MULTISIG },
+        verifier: verifier
+      }
+    }, `verifier_participation (signing) - ${verifier.slice(0, 15)}...`);
+  }
+
+  // Also try without verifier param to see if it returns all
+  console.log('\nTrying without verifier param:');
+  await tryQuery(REWARDS_CONTRACT, {
+    verifier_participation: {
+      pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER }
+    }
+  }, 'verifier_participation (all) - voting');
+
+  await tryQuery(REWARDS_CONTRACT, {
+    verifier_participation: {
+      pool_id: { chain_name: 'flow', contract: GLOBAL_MULTISIG }
+    }
+  }, 'verifier_participation (all) - signing');
 
   // 4. Query the VotingVerifier contract directly for poll data
   console.log('\n' + '─'.repeat(60));
