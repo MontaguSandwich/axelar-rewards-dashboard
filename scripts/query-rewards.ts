@@ -27,6 +27,9 @@ interface ChainData {
   multisigProver: string | null;
 }
 
+// Global Multisig contract - signing pools might use this instead of chain-specific prover
+let globalMultisig: string | null = null;
+
 async function fetchMainnetConfig(): Promise<any> {
   const response = await axios.get(MAINNET_CONFIG_URL);
   return response.data;
@@ -114,9 +117,11 @@ async function main() {
   const config = await fetchMainnetConfig();
   const rewardsContract = config.axelar.contracts.Rewards.address;
   const serviceRegistry = config.axelar.contracts.ServiceRegistry.address;
+  globalMultisig = config.axelar.contracts.Multisig?.address || null;
 
   console.log(`Rewards Contract: ${rewardsContract}`);
   console.log(`Service Registry: ${serviceRegistry}`);
+  console.log(`Global Multisig: ${globalMultisig}`);
   console.log(`Block Time: ${BLOCK_TIME_SECONDS}s\n`);
   console.log('='.repeat(80));
 
@@ -199,26 +204,52 @@ async function main() {
       console.log('No voting verifier contract');
     }
 
-    // Query signing pool
+    // Query signing pool - try chain-specific MultisigProver first, then global Multisig
     console.log('\n--- SIGNING POOL ---');
+    let signingPool: PoolResponse | null = null;
+    let signingContract: string | null = null;
+
+    // Try chain-specific MultisigProver first
     if (chain.multisigProver) {
-      console.log(`Contract: ${chain.multisigProver}`);
-      const signingPool = await queryRewardsPool(rewardsContract, chain.chainKey, chain.multisigProver);
+      console.log(`Trying chain-specific MultisigProver: ${chain.multisigProver}`);
+      signingPool = await queryRewardsPool(rewardsContract, chain.chainKey, chain.multisigProver);
+      if (signingPool) {
+        signingContract = chain.multisigProver;
+      }
+    }
+
+    // If no pool found, try global Multisig
+    if (!signingPool && globalMultisig) {
+      console.log(`Trying global Multisig: ${globalMultisig}`);
+      signingPool = await queryRewardsPool(rewardsContract, chain.chainKey, globalMultisig);
+      if (signingPool) {
+        signingContract = globalMultisig;
+      }
+    }
+
+    if (signingPool && signingContract) {
+      console.log(`Found signing pool with contract: ${signingContract}`);
       console.log(formatPool(signingPool, verifiers));
       results.push({
         chain: chain.chainName,
         chainKey: chain.chainKey,
         type: 'signing',
         verifiers,
-        ...(signingPool ? {
-          balance: parseInt(signingPool.balance) / 1e6,
-          rewardsPerEpoch: parseInt(signingPool.rewards_per_epoch) / 1e6,
-          epochDuration: parseInt(signingPool.epoch_duration),
-          currentEpoch: parseInt(signingPool.current_epoch_num),
-        } : { error: 'No pool' }),
+        contract: signingContract,
+        balance: parseInt(signingPool.balance) / 1e6,
+        rewardsPerEpoch: parseInt(signingPool.rewards_per_epoch) / 1e6,
+        epochDuration: parseInt(signingPool.epoch_duration),
+        currentEpoch: parseInt(signingPool.current_epoch_num),
       });
     } else {
-      console.log('No multisig prover contract');
+      console.log('No signing pool found (tried MultisigProver and global Multisig)');
+      results.push({
+        chain: chain.chainName,
+        chainKey: chain.chainKey,
+        type: 'signing',
+        verifiers,
+        error: 'No pool',
+      });
     }
 
     // Small delay to avoid rate limiting
