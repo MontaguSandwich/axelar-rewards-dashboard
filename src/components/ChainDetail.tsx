@@ -34,7 +34,7 @@ function PoolCard({ pool, timePeriod }: PoolCardProps) {
     switch (timePeriod) {
       case 'epoch':
         return {
-          axl: pool.rewardsPerNewVerifierPerEpoch,
+          axl: pool.rewardsPerVerifierPerEpoch,
           usd: pool.epochRewardsUsd,
           label: 'Per Epoch',
         };

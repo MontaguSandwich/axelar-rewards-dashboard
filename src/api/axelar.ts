@@ -104,18 +104,17 @@ function calculatePoolMetrics(
   //   (e.g., 80% threshold means verifier must vote/sign on 80% of messages that epoch)
   // - This is NOT "80% of verifiers qualify" - it's "each verifier must hit 80% participation"
   // - In practice, most active verifiers meet the threshold (or they get deregistered)
-  // - We assume all active verifiers qualify, then add 1 for the new verifier joining
-  const verifierCountForNewJoiner = activeVerifiers + 1;
-  const rewardsPerNewVerifierPerEpoch = activeVerifiers > 0
-    ? rewardsPerEpoch / verifierCountForNewJoiner
-    : rewardsPerEpoch; // If no verifiers, new one gets full rewards
+  // - Show actual rewards per verifier based on current verifier count
+  const rewardsPerVerifierPerEpoch = activeVerifiers > 0
+    ? rewardsPerEpoch / activeVerifiers
+    : rewardsPerEpoch; // If no verifiers, one would get full rewards
 
   // Calculate epochs per time period based on block time
   const epochsPerWeek = BLOCKS_PER_WEEK / epochDurationBlocks;
   const epochsPerMonth = BLOCKS_PER_MONTH / epochDurationBlocks;
 
-  const estimatedWeeklyRewards = rewardsPerNewVerifierPerEpoch * epochsPerWeek;
-  const estimatedMonthlyRewards = rewardsPerNewVerifierPerEpoch * epochsPerMonth;
+  const estimatedWeeklyRewards = rewardsPerVerifierPerEpoch * epochsPerWeek;
+  const estimatedMonthlyRewards = rewardsPerVerifierPerEpoch * epochsPerMonth;
 
   return {
     chainName,
@@ -127,11 +126,11 @@ function calculatePoolMetrics(
     currentEpoch,
     participationThreshold,
     activeVerifiers,
-    rewardsPerNewVerifierPerEpoch,
+    rewardsPerVerifierPerEpoch,
     estimatedWeeklyRewards,
     estimatedMonthlyRewards,
     balanceUsd: balance * axlPrice,
-    epochRewardsUsd: rewardsPerNewVerifierPerEpoch * axlPrice,
+    epochRewardsUsd: rewardsPerVerifierPerEpoch * axlPrice,
     weeklyRewardsUsd: estimatedWeeklyRewards * axlPrice,
     monthlyRewardsUsd: estimatedMonthlyRewards * axlPrice,
   };
@@ -244,8 +243,8 @@ async function fetchChainRewards(
     (votingPool?.rewardsPerEpoch ?? 0) +
     (signingPool?.rewardsPerEpoch ?? 0);
   const totalRewardsPerEpoch =
-    (votingPool?.rewardsPerNewVerifierPerEpoch ?? 0) +
-    (signingPool?.rewardsPerNewVerifierPerEpoch ?? 0);
+    (votingPool?.rewardsPerVerifierPerEpoch ?? 0) +
+    (signingPool?.rewardsPerVerifierPerEpoch ?? 0);
   const totalWeeklyRewards =
     (votingPool?.estimatedWeeklyRewards ?? 0) +
     (signingPool?.estimatedWeeklyRewards ?? 0);

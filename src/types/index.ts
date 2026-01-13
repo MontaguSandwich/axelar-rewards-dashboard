@@ -29,7 +29,7 @@ export interface RewardsPoolData {
 
   // Calculated
   activeVerifiers: number;
-  rewardsPerNewVerifierPerEpoch: number;
+  rewardsPerVerifierPerEpoch: number;
   estimatedWeeklyRewards: number;
   estimatedMonthlyRewards: number;
 
@@ -51,7 +51,7 @@ export interface ChainRewardsData {
   poolRewardsPerEpoch: number;
   poolRewardsPerEpochUsd: number;
 
-  // Your rewards (divided by verifiers + 1)
+  // Your rewards (divided by current verifier count)
   totalRewardsPerEpoch: number;
   totalRewardsPerEpochUsd: number;
   totalWeeklyRewards: number;
