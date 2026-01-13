@@ -175,15 +175,6 @@ async function getPollDetails(votingVerifier: string, pollId: number): Promise<{
   };
 }
 
-// Calculate which epoch a block belongs to
-function getEpochForBlock(blockHeight: number, currentBlock: number, currentEpoch: number): number {
-  // Work backwards from current epoch
-  const currentEpochStartBlock = currentBlock - (currentBlock % EPOCH_DURATION);
-  const blocksSinceEpochStart = currentEpochStartBlock - blockHeight;
-  const epochsBack = Math.floor(blocksSinceEpochStart / EPOCH_DURATION);
-  return currentEpoch - epochsBack;
-}
-
 // Get verifier's performance for unpaid epochs on a chain
 async function getVerifierChainPerformance(
   verifierAddress: string,
@@ -197,43 +188,79 @@ async function getVerifierChainPerformance(
 
   // Find latest poll
   const latestPollId = await findLatestPollId(votingVerifier);
+  console.log(`    Latest poll ID: ${latestPollId}`);
 
-  // Build epoch -> polls mapping
+  // Get the latest poll's expires_at to establish a reference point
+  const latestPoll = await getPollDetails(votingVerifier, latestPollId);
+  if (!latestPoll) {
+    console.log(`    Could not get latest poll details`);
+    return performance;
+  }
+
+  // The latest poll's expires_at is close to current block
+  // We can estimate: current epoch started at approximately currentBlock - (currentBlock % EPOCH_DURATION)
+  const currentEpochStartBlock = currentBlock - (currentBlock % EPOCH_DURATION);
+
+  console.log(`    Current block: ${currentBlock}`);
+  console.log(`    Current epoch ${currentEpoch} started ~block ${currentEpochStartBlock}`);
+
+  // Build epoch -> block range mapping
+  const epochRanges = new Map<number, { start: number; end: number }>();
+  for (const epoch of unpaidEpochs) {
+    const epochsBack = currentEpoch - epoch;
+    const epochStart = currentEpochStartBlock - (epochsBack * EPOCH_DURATION);
+    const epochEnd = epochStart + EPOCH_DURATION - 1;
+    epochRanges.set(epoch, { start: epochStart, end: epochEnd });
+  }
+
+  // Initialize epoch stats
   const epochPolls = new Map<number, { total: number; voted: number }>();
   for (const epoch of unpaidEpochs) {
     epochPolls.set(epoch, { total: 0, voted: 0 });
   }
 
-  // Scan recent polls and map to epochs
-  console.log(`    Scanning polls for ${chainName}...`);
-  for (let pollId = latestPollId; pollId >= Math.max(1, latestPollId - 200); pollId--) {
+  // Scan polls and map to epochs based on expires_at block height
+  console.log(`    Scanning polls ${Math.max(1, latestPollId - 500)} to ${latestPollId}...`);
+
+  let pollsScanned = 0;
+  let pollsMapped = 0;
+
+  for (let pollId = latestPollId; pollId >= Math.max(1, latestPollId - 500); pollId--) {
     const poll = await getPollDetails(votingVerifier, pollId);
     if (!poll) continue;
 
-    const pollEpoch = getEpochForBlock(poll.expiresAt, currentBlock, currentEpoch);
+    pollsScanned++;
 
-    if (epochPolls.has(pollEpoch)) {
-      const stats = epochPolls.get(pollEpoch)!;
-      stats.total++;
-      if (poll.participation[verifierAddress]?.voted) {
-        stats.voted++;
+    // Find which epoch this poll belongs to based on expires_at
+    for (const [epoch, range] of epochRanges) {
+      if (poll.expiresAt >= range.start && poll.expiresAt <= range.end) {
+        const stats = epochPolls.get(epoch)!;
+        stats.total++;
+        if (poll.participation[verifierAddress]?.voted) {
+          stats.voted++;
+        }
+        pollsMapped++;
+        break;
       }
     }
   }
 
+  console.log(`    Scanned ${pollsScanned} polls, mapped ${pollsMapped} to unpaid epochs`);
+
   // Build performance array
   for (const epoch of unpaidEpochs) {
     const stats = epochPolls.get(epoch) || { total: 0, voted: 0 };
+    const range = epochRanges.get(epoch)!;
     const rate = stats.total > 0 ? (stats.voted / stats.total) * 100 : 0;
 
     performance.push({
       epochNum: epoch,
-      startBlock: 0, // Would need reference point
-      endBlock: 0,
+      startBlock: range.start,
+      endBlock: range.end,
       pollsInEpoch: stats.total,
       pollsVoted: stats.voted,
       participationRate: rate,
-      qualified: rate >= 80
+      qualified: stats.total > 0 ? rate >= 80 : false // Can't qualify if no polls
     });
   }
 
