@@ -97,69 +97,61 @@ async function main() {
     }
   }, 'Flow signing pool');
 
-  // 3. Query verifier_participation for both pools
+  // 3. Query verifier_participation with epoch_num (correct param)
   console.log('\n' + '─'.repeat(60));
-  console.log('3. VERIFIER PARTICIPATION QUERIES');
+  console.log('3. VERIFIER PARTICIPATION BY EPOCH');
   console.log('─'.repeat(60));
 
-  // Get a sample verifier from the service registry query we'll do later
-  const sampleVerifiers = [
-    'axelar15k8d4hqgytdxmcx3lhph2qagvt0r7683cchglj',
-    'axelar16g3c4z0dx3qcplhqfln92p20mkqdj9cr0wyrsh',
-    'axelar1t23g23u5pcuh9y2stzesf4cx5z3jr66zykkffm',
-  ];
+  // Get current epoch from signing pool
+  const currentEpoch = flowSigningPool?.current_epoch_num ? parseInt(flowSigningPool.current_epoch_num) : 500;
 
-  // Query verifier_participation for voting pool
-  console.log('\nVoting Pool Participation:');
-  for (const verifier of sampleVerifiers.slice(0, 2)) {
+  // Query participation for recent epochs
+  console.log(`\nQuerying participation for epochs around current (${currentEpoch}):`);
+
+  for (const epochOffset of [0, -1, -5, -10]) {
+    const epochNum = currentEpoch + epochOffset;
+
+    // Voting pool
     await tryQuery(REWARDS_CONTRACT, {
       verifier_participation: {
         pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER },
-        verifier: verifier
+        epoch_num: epochNum
       }
-    }, `verifier_participation (voting) - ${verifier.slice(0, 15)}...`);
-  }
+    }, `Voting pool - Epoch ${epochNum}`);
 
-  // Query verifier_participation for signing pool (global multisig)
-  console.log('\nSigning Pool Participation:');
-  for (const verifier of sampleVerifiers.slice(0, 2)) {
+    // Signing pool
     await tryQuery(REWARDS_CONTRACT, {
       verifier_participation: {
         pool_id: { chain_name: 'flow', contract: GLOBAL_MULTISIG },
-        verifier: verifier
+        epoch_num: epochNum
       }
-    }, `verifier_participation (signing) - ${verifier.slice(0, 15)}...`);
+    }, `Signing pool - Epoch ${epochNum}`);
+
+    console.log('');
   }
 
-  // Also try without verifier param to see if it returns all
-  console.log('\nTrying without verifier param:');
-  await tryQuery(REWARDS_CONTRACT, {
-    verifier_participation: {
-      pool_id: { chain_name: 'flow', contract: FLOW_VOTING_VERIFIER }
-    }
-  }, 'verifier_participation (all) - voting');
-
-  await tryQuery(REWARDS_CONTRACT, {
-    verifier_participation: {
-      pool_id: { chain_name: 'flow', contract: GLOBAL_MULTISIG }
-    }
-  }, 'verifier_participation (all) - signing');
-
   // 4. Query the VotingVerifier contract directly for poll data
+  // Supported queries: poll, messages_status, verifier_set_status, voting_params
   console.log('\n' + '─'.repeat(60));
-  console.log('4. VOTING VERIFIER CONTRACT - Direct Queries');
+  console.log('4. VOTING VERIFIER CONTRACT - Poll Participation');
   console.log('─'.repeat(60));
 
-  const votingVerifierQueries = [
-    { current_poll: {} },
-    { poll: { poll_id: '1' } },
-    { polls: { start_after: null, limit: 10 } },
-    { verifier_set: {} },
-    { config: {} },
-  ];
+  // Query voting_params first
+  await tryQuery(FLOW_VOTING_VERIFIER, { voting_params: {} }, 'voting_params');
 
-  for (const query of votingVerifierQueries) {
-    await tryQuery(FLOW_VOTING_VERIFIER, query, Object.keys(query)[0]);
+  // Query verifier_set_status
+  await tryQuery(FLOW_VOTING_VERIFIER, { verifier_set_status: {} }, 'verifier_set_status');
+
+  // Query recent polls to see participation
+  console.log('\nRecent poll participation:');
+  for (const pollId of ['100', '200', '300', '500', '1000']) {
+    const result = await tryQuery(FLOW_VOTING_VERIFIER, { poll: { poll_id: pollId } }, `poll ${pollId}`);
+    if (result?.poll?.participation) {
+      const participants = Object.entries(result.poll.participation);
+      const voted = participants.filter(([_, p]: [string, any]) => p.voted).length;
+      const total = participants.length;
+      console.log(`  Poll ${pollId}: ${voted}/${total} verifiers voted`);
+    }
     console.log('');
   }
 
