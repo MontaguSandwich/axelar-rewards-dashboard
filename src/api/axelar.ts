@@ -98,19 +98,19 @@ function calculatePoolMetrics(
     parseInt(poolResponse.participation_threshold[0]) /
     parseInt(poolResponse.participation_threshold[1]);
 
-  // IMPORTANT: Rewards are only distributed to verifiers who meet the participation threshold.
-  // Not all active verifiers qualify - only those meeting the threshold (e.g., 80%) receive rewards.
-  // The on-chain Rewards contract doesn't expose a query for aggregate qualifying verifier count;
-  // only individual VerifierParticipation can be queried (which would require N API calls).
-  // We estimate qualifying verifiers as: activeVerifiers * participationThreshold
-  // This provides a more accurate reward estimate than dividing by all active verifiers.
-  const estimatedQualifyingVerifiers = Math.max(1, Math.ceil(activeVerifiers * participationThreshold));
+  // REWARD DISTRIBUTION MECHANICS:
+  // - rewards_per_epoch is split equally among all QUALIFYING verifiers each epoch
+  // - A verifier qualifies if they participate in >= participationThreshold% of EVENTS
+  //   (e.g., 80% threshold means verifier must vote/sign on 80% of messages that epoch)
+  // - This is NOT "80% of verifiers qualify" - it's "each verifier must hit 80% participation"
+  // - In practice, most active verifiers meet the threshold (or they get deregistered)
+  // - We assume all active verifiers qualify, then add 1 for the new verifier joining
+  const verifierCountForNewJoiner = activeVerifiers + 1;
+  const rewardsPerNewVerifierPerEpoch = activeVerifiers > 0
+    ? rewardsPerEpoch / verifierCountForNewJoiner
+    : rewardsPerEpoch; // If no verifiers, new one gets full rewards
 
-  // Calculate for a NEW verifier joining (assuming they will meet the threshold)
-  const qualifyingWithNewVerifier = estimatedQualifyingVerifiers + 1;
-  const rewardsPerNewVerifierPerEpoch = rewardsPerEpoch / qualifyingWithNewVerifier;
-
-  // Calculate epochs per time period
+  // Calculate epochs per time period based on block time
   const epochsPerWeek = BLOCKS_PER_WEEK / epochDurationBlocks;
   const epochsPerMonth = BLOCKS_PER_MONTH / epochDurationBlocks;
 
@@ -127,7 +127,6 @@ function calculatePoolMetrics(
     currentEpoch,
     participationThreshold,
     activeVerifiers,
-    estimatedQualifyingVerifiers,
     rewardsPerNewVerifierPerEpoch,
     estimatedWeeklyRewards,
     estimatedMonthlyRewards,
