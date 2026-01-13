@@ -73,13 +73,19 @@ export async function fetchVotingRewardsPoolInfo(chainName: string): Promise<{
 
 // Find latest poll ID via binary search
 async function findLatestPollId(votingVerifierContract: string): Promise<number> {
-  // First try the poll_id query which returns the current poll count
+  // First try the poll_id query which returns the NEXT poll ID to be created
   const pollIdResult = await queryContract(votingVerifierContract, { poll_id: {} });
-  if (pollIdResult && typeof pollIdResult === 'number') {
-    return pollIdResult;
-  }
-  if (pollIdResult && typeof pollIdResult === 'string') {
-    return parseInt(pollIdResult);
+  if (pollIdResult) {
+    const nextPollId = typeof pollIdResult === 'number' ? pollIdResult : parseInt(pollIdResult);
+    // poll_id returns next ID, so latest existing is nextPollId - 1
+    const latestExisting = nextPollId - 1;
+    if (latestExisting >= 1) {
+      // Verify this poll actually exists
+      const verifyPoll = await queryContract(votingVerifierContract, { poll: { poll_id: latestExisting.toString() } });
+      if (verifyPoll && verifyPoll.poll) {
+        return latestExisting;
+      }
+    }
   }
 
   // Fallback to binary search if poll_id query doesn't work
@@ -205,10 +211,17 @@ export async function fetchVotingPerformance(
     const oldestEpoch = Math.min(...epochsToScan);
     const oldestEpochRange = epochRanges.get(oldestEpoch)!;
 
+    // Log epoch ranges for debugging
+    log(`Epoch ranges (block heights):`);
+    for (const [epoch, range] of epochRanges) {
+      log(`  Epoch ${epoch}: ${range.start} - ${range.end}`);
+    }
+
     log(`Scanning polls for epochs ${oldestEpoch}-${poolInfo.currentEpoch}...`);
 
     let pollsScanned = 0;
     let pollsMapped = 0;
+    let pollsOutOfRange = 0;
 
     // Scan backwards from latest poll (limit to 2000 to avoid timeout)
     for (let pollId = latestPollId; pollId >= Math.max(1, latestPollId - 2000); pollId--) {
@@ -217,12 +230,19 @@ export async function fetchVotingPerformance(
 
       pollsScanned++;
 
+      // Log first few polls to debug
+      if (pollsScanned <= 3) {
+        log(`Poll ${pollId}: expires_at=${poll.expiresAt}, participants=${poll.participation.length}`);
+      }
+
       // Stop if poll is before our oldest epoch
       if (poll.expiresAt < oldestEpochRange.start) {
+        log(`Poll ${pollId} (expires_at=${poll.expiresAt}) is before oldest epoch start (${oldestEpochRange.start}), stopping`);
         break;
       }
 
       // Find which epoch this poll belongs to
+      let mapped = false;
       for (const [epoch, range] of epochRanges) {
         if (poll.expiresAt >= range.start && poll.expiresAt <= range.end) {
           const stats = epochStats.get(epoch)!;
@@ -233,8 +253,13 @@ export async function fetchVotingPerformance(
             stats.voted++;
           }
           pollsMapped++;
+          mapped = true;
           break;
         }
+      }
+
+      if (!mapped) {
+        pollsOutOfRange++;
       }
 
       // Progress update every 50 polls
@@ -243,7 +268,7 @@ export async function fetchVotingPerformance(
       }
     }
 
-    log(`Total: ${pollsScanned} polls scanned, ${pollsMapped} mapped`);
+    log(`Total: ${pollsScanned} polls scanned, ${pollsMapped} mapped, ${pollsOutOfRange} out of range`);
 
     // Build performance array
     const epochPerformance: VotingEpochPerformance[] = [];
